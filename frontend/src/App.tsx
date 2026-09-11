@@ -98,7 +98,7 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>llamaHandler</h1>
+        <h1>LlamaPanel</h1>
       </header>
 
       {error && <div className="error-banner">{error}</div>}

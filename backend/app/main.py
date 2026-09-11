@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.routers import models, presets, server
 
-app = FastAPI(title="llamaHandler")
+app = FastAPI(title="LlamaPanel")
 
 app.include_router(models.router)
 app.include_router(server.router)

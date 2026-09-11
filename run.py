@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Single entry point for llamaHandler.
+Single entry point for LlamaPanel.
 
 Meant to run ON the GPU machine that also has llama.cpp and the model files.
-Requires only *some* Python (3.10+) there to bootstrap - the frontend is
+Requires only *some* Python (3.12+) there to bootstrap - the frontend is
 already pre-built into frontend/dist and committed to the repo, so no
 Node.js is needed on that box.
 
@@ -72,8 +72,16 @@ def ensure_dependencies() -> None:
     except ImportError:
         print("Installing backend dependencies into the venv...", flush=True)
         subprocess.check_call([
-            sys.executable, "-m", "pip", "install", "-q",
+            sys.executable, "-m", "pip", "install",
             "-r", str(BACKEND / "requirements.txt"),
+        ])
+        # gguf pulls in sentencepiece transitively, which has no prebuilt
+        # wheel for newer Python versions and fails building from source.
+        # We only use gguf.GGUFReader for header metadata, which needs
+        # nothing beyond numpy/pyyaml/tqdm (installed above) - so install it
+        # with --no-deps to skip that unused, build-fragile dependency.
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", "--no-deps", "gguf>=0.13",
         ])
 
 
@@ -106,13 +114,23 @@ def load_config_file() -> dict:
     return values
 
 
+def check_python_version() -> None:
+    if sys.version_info < (3, 12):
+        sys.exit(
+            f"LlamaPanel requires Python 3.12+, but this is "
+            f"{sys.version_info.major}.{sys.version_info.minor}. "
+            f"Install a newer Python and re-run."
+        )
+
+
 def main() -> None:
+    check_python_version()
     ensure_venv_and_reexec()  # from here on, sys.executable is ./.venv's python
     ensure_dependencies()
 
     file_config = load_config_file()
 
-    parser = argparse.ArgumentParser(description="Run the llamaHandler panel.")
+    parser = argparse.ArgumentParser(description="Run the LlamaPanel server.")
     parser.add_argument("--host", default=None, help="Bind address for the panel itself (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=None, help="Port for the panel itself (default: 8000)")
     parser.add_argument("--models-dir", default=None, help="Directory to scan for .gguf files")
@@ -140,7 +158,7 @@ def main() -> None:
     sys.path.insert(0, str(BACKEND))
     import uvicorn
 
-    print(f"llamaHandler starting on http://{host}:{port}", flush=True)
+    print(f"LlamaPanel starting on http://{host}:{port}", flush=True)
     uvicorn.run("app.main:app", host=host, port=port, reload=args.reload, app_dir=str(BACKEND))
 
 

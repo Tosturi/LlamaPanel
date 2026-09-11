@@ -1,4 +1,4 @@
-# llamaHandler
+# LlamaPanel
 
 Model-serving панель для `llama-server` (llama.cpp): сканирует директорию с GGUF-моделями,
 запускает/останавливает сервер с выбранными флагами, показывает статус и живые логи.
@@ -12,11 +12,11 @@ llama.cpp и модели** (там, где GPU) — процесс `llama-serve
 ## Установка на GPU-машине
 
 Фронтенд уже собран и закоммичен в `frontend/dist/` — на целевой машине нужен
-**только Python 3.10+**, Node.js не требуется.
+**только Python 3.12+**, Node.js не требуется.
 
 ```bash
-git clone <repo> llamaHandler
-cd llamaHandler
+git clone <repo> LlamaPanel
+cd LlamaPanel
 cp config.example.ini config.ini
 # отредактировать config.ini: models_dir, server_bin, host/port
 python run.py

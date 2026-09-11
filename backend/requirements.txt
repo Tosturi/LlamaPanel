@@ -1,6 +1,12 @@
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-pydantic==2.9.2
-gguf==0.10.0
-python-multipart==0.0.9
-psutil==6.0.0
+fastapi>=0.115
+uvicorn[standard]>=0.34
+pydantic>=2.10
+python-multipart>=0.0.20
+psutil>=6.1
+
+# gguf's own runtime deps (installed with --no-deps below to skip its
+# transitive sentencepiece dependency - unused by us, and build-fragile on
+# newer Python versions since it has no prebuilt wheel yet).
+numpy>=2.1
+pyyaml>=5.1
+tqdm>=4.27
