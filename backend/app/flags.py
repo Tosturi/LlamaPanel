@@ -30,6 +30,11 @@ FLAG_SCHEMA: list[FlagDef] = [
         key="port", cli="--port", type="number",
         label="Port", group="basic", default=8080,
     ),
+    FlagDef(
+        key="seed", cli="--seed", type="number",
+        label="Seed", group="basic", default=-1,
+        help="RNG seed. -1 = random on each start.",
+    ),
     # --- advanced ---
     FlagDef(
         key="cache_type_k", cli="--cache-type-k", type="enum",
@@ -63,6 +68,15 @@ FLAG_SCHEMA: list[FlagDef] = [
     FlagDef(
         key="threads", cli="--threads", type="number",
         label="CPU Threads", group="advanced",
+    ),
+    FlagDef(
+        key="spec_type", cli="--spec-type", type="string",
+        label="Speculative Decoding Type (--spec-type)", group="advanced",
+        help="e.g. 'draft-mtp' for MTP-based speculative decoding.",
+    ),
+    FlagDef(
+        key="spec_draft_n_max", cli="--spec-draft-n-max", type="number",
+        label="Max Draft Tokens (--spec-draft-n-max)", group="advanced",
     ),
 ]
 
