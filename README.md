@@ -55,8 +55,13 @@ npm install
 npm run dev   # http://localhost:5173, проксирует /api на :8000
 ```
 
-После изменений в `frontend/src/*` перед деплоем на GPU-машину не забыть
-пересобрать и закоммитить статику:
+После пуша изменений `frontend/src/*` (и смежных файлов) в `main` GitHub
+Actions ([.github/workflows/build-frontend.yml](.github/workflows/build-frontend.yml))
+сам пересобирает `frontend/dist` и коммитит его обратно в репозиторий -
+руками пересобирать перед деплоем не нужно, достаточно сделать
+`git pull` на GPU-машине после того, как workflow отработает.
+
+Если нужно собрать локально (например, чтобы проверить сборку до пуша):
 
 ```bash
 cd frontend && npm run build

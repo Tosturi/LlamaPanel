@@ -6,7 +6,12 @@ backend/app/routers/__pycache__/
 *.pyc
 
 frontend/node_modules/
+# frontend/dist/ is intentionally NOT ignored - it's the pre-built frontend
+# committed so the GPU machine only needs Python, no Node.js.
 
+# Runtime state (presets, llama-server log) - local to each machine.
 /data/
 
+# Local machine config (models_dir, llama_bin, port, ...) - copy from
+# config.example.ini, never commit the real one.
 /config.ini
