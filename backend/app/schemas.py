@@ -58,3 +58,10 @@ class StatusResponse(BaseModel):
     adopted: bool = False
     started_at: Optional[float] = None
     exit_code: Optional[int] = None
+    busy: Optional[bool] = None  # None = unknown (server unreachable or started with --no-slots)
+    restart_pending: bool = False
+
+
+class RestartResponse(BaseModel):
+    result: Literal["applied", "queued"]
+    status: StatusResponse

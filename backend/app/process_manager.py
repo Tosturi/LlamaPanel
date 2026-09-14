@@ -5,7 +5,7 @@ from typing import Optional
 
 import psutil
 
-from app import config
+from app import config, llama_client
 from app.schemas import FlagValue, ServerState, StatusResponse
 
 
@@ -35,12 +35,28 @@ class ProcessManager:
         self._stop_requested = False
         self._lock = asyncio.Lock()
         self._tail_task: Optional[asyncio.Task] = None
+        self._pending_restart: Optional[dict] = None
+        self._restart_task: Optional[asyncio.Task] = None
 
     @property
     def state(self) -> ServerState:
         return self._state
 
-    def status(self) -> StatusResponse:
+    @property
+    def restart_pending(self) -> bool:
+        return self._pending_restart is not None
+
+    async def is_busy(self) -> Optional[bool]:
+        """Whether llama-server itself reports an in-flight generation right
+        now (via its own /slots bookkeeping) - independent of who's talking
+        to it (Hermes, the webui, ...)."""
+        if self._state != "running":
+            return False
+        host = self._flags.get("host") or "127.0.0.1"
+        port = self._flags.get("port") or 8080
+        return await asyncio.to_thread(llama_client.is_busy, str(host), int(port))
+
+    async def status(self) -> StatusResponse:
         return StatusResponse(
             state=self._state,
             pid=self._pid,
@@ -50,6 +66,8 @@ class ProcessManager:
             adopted=self._adopted,
             started_at=self._started_at,
             exit_code=self._exit_code,
+            busy=await self.is_busy(),
+            restart_pending=self.restart_pending,
         )
 
     def subscribe(self) -> asyncio.Queue:
@@ -191,6 +209,47 @@ class ProcessManager:
                 await proc.wait()
 
             self._state = "stopped"
+
+    async def restart(self, model_id: str, binary: str, args: list[str], flags: dict[str, FlagValue]) -> str:
+        """Apply new flags by restarting llama-server - immediately if it's
+        idle, or queued until its current generation finishes if not.
+        Returns "applied" or "queued"."""
+        pending = {"model_id": model_id, "binary": binary, "args": args, "flags": flags}
+
+        if self._state != "running" or await self.is_busy() is not True:
+            self._pending_restart = None
+            await self.stop()
+            await self.start(**pending)
+            return "applied"
+
+        self._pending_restart = pending
+        self._emit("[reload requested - waiting for the current inference to finish]")
+        if self._restart_task is None or self._restart_task.done():
+            self._restart_task = asyncio.create_task(self._wait_and_restart())
+        return "queued"
+
+    async def cancel_restart(self) -> None:
+        self._pending_restart = None
+        if self._restart_task is not None:
+            self._restart_task.cancel()
+            self._restart_task = None
+
+    async def _wait_and_restart(self) -> None:
+        try:
+            while self._pending_restart is not None:
+                if await self.is_busy() is not True:
+                    pending = self._pending_restart
+                    self._pending_restart = None
+                    self._emit("[inference finished - reloading with the new settings]")
+                    await self.stop()
+                    await self.start(**pending)
+                    return
+                await asyncio.sleep(2.0)
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            self._pending_restart = None
+            self._emit(f"[reload-when-idle failed: {exc}]")
 
 
 manager = ProcessManager()

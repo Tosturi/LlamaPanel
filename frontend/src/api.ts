@@ -1,4 +1,4 @@
-import type { FlagDef, FlagValues, ModelInfo, Preset, StatusResponse } from "./types";
+import type { FlagDef, FlagValues, ModelInfo, Preset, RestartResponse, StatusResponse } from "./types";
 
 // Relative to the current origin: works both in Vite dev (proxied, see
 // vite.config.ts) and in production, where FastAPI serves the built
@@ -28,6 +28,15 @@ export const api = {
     }).then((r) => json<StatusResponse>(r)),
 
   stopServer: () => fetch(`${BASE}/api/server/stop`, { method: "POST" }).then((r) => json<StatusResponse>(r)),
+
+  restartServer: (modelId: string, flags: FlagValues) =>
+    fetch(`${BASE}/api/server/restart`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model_id: modelId, flags }),
+    }).then((r) => json<RestartResponse>(r)),
+
+  cancelRestart: () => fetch(`${BASE}/api/server/restart/cancel`, { method: "POST" }).then((r) => json<StatusResponse>(r)),
 
   listPresets: () => fetch(`${BASE}/api/presets`).then((r) => json<Preset[]>(r)),
 

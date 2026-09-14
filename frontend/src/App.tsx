@@ -23,7 +23,7 @@ export default function App() {
   const [syncedPid, setSyncedPid] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [modelsLoading, setModelsLoading] = useState(true);
-  const [actionPending, setActionPending] = useState<"start" | "stop" | null>(null);
+  const [actionPending, setActionPending] = useState<"start" | "stop" | "reload" | null>(null);
 
   const loadModels = () => {
     setModelsLoading(true);
@@ -80,6 +80,22 @@ export default function App() {
     setError(null);
     setActionPending("stop");
     api.stopServer().then(setStatus).catch((e) => setError(String(e))).finally(() => setActionPending(null));
+  };
+
+  const handleReload = () => {
+    if (!selectedId) return;
+    setError(null);
+    setActionPending("reload");
+    api
+      .restartServer(selectedId, values)
+      .then((r) => setStatus(r.status))
+      .catch((e) => setError(String(e)))
+      .finally(() => setActionPending(null));
+  };
+
+  const handleCancelRestart = () => {
+    setError(null);
+    api.cancelRestart().then(setStatus).catch((e) => setError(String(e)));
   };
 
   const handleSavePreset = (name: string) => {
@@ -143,6 +159,8 @@ export default function App() {
             pending={actionPending}
             onStart={handleStart}
             onStop={handleStop}
+            onReload={handleReload}
+            onCancelRestart={handleCancelRestart}
           />
           <LogViewer />
         </section>

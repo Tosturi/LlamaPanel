@@ -41,6 +41,19 @@ header h1 { font-size: 1.25rem; margin: 0 0 1rem; }
 .state-crashed { background: #6b1e1e; }
 .spacer { flex: 1; }
 
+.server-controls-block { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
+.server-controls-block .server-controls { margin-bottom: 0; }
+
+.inference-badge { display: inline-flex; align-items: center; gap: 0.4rem; }
+.inference-badge .dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: #6b7280; display: inline-block; }
+.inference-badge.inference-active { background: #6b1ea3; color: #f2e6ff; }
+.inference-badge.inference-active .dot { background: #d9b3ff; animation: pulse 1s ease-in-out infinite; }
+.inference-badge.inference-idle .dot { background: #3fae66; }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
+
+.restart-banner { display: flex; align-items: center; gap: 0.5rem; background: #3a3410; border: 1px solid #6b5b1e; border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.85rem; }
+.link-button { background: none; border: none; color: #9cf; text-decoration: underline; cursor: pointer; padding: 0; font-size: inherit; margin-left: auto; }
+
 .log-viewer { background: #05060a; border-radius: 6px; padding: 0.5rem; height: 260px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; }
 .log-line { white-space: pre-wrap; word-break: break-all; }
 

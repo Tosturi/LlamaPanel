@@ -40,6 +40,13 @@ export interface StatusResponse {
   adopted: boolean;
   started_at: number | null;
   exit_code: number | null;
+  busy: boolean | null; // null = unknown (server unreachable, or started with --no-slots)
+  restart_pending: boolean;
+}
+
+export interface RestartResponse {
+  result: "applied" | "queued";
+  status: StatusResponse;
 }
 
 export type FlagValues = Record<string, boolean | number | string | null>;

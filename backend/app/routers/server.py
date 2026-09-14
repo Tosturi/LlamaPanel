@@ -6,7 +6,7 @@ from app import config, discovery
 from app.flags import FLAG_SCHEMA, build_args
 from app.gguf_scanner import scan
 from app.process_manager import manager
-from app.schemas import FlagDef, StartRequest, StatusResponse
+from app.schemas import FlagDef, RestartResponse, StartRequest, StatusResponse
 
 router = APIRouter(prefix="/api/server", tags=["server"])
 
@@ -29,7 +29,7 @@ def get_flag_schema() -> list[FlagDef]:
 
 
 @router.get("/status", response_model=StatusResponse)
-def get_status() -> StatusResponse:
+async def get_status() -> StatusResponse:
     # If we don't think anything is running, check whether a llama-server is
     # actually alive out there (started manually, or left over from a
     # previous run of this panel) and adopt it so the UI reflects reality.
@@ -38,7 +38,7 @@ def get_status() -> StatusResponse:
         if found:
             model_id = _match_model_id(found["model_path"])
             manager.adopt(pid=found["pid"], model_id=model_id, flags=found["flags"])
-    return manager.status()
+    return await manager.status()
 
 
 @router.post("/start", response_model=StatusResponse)
@@ -59,13 +59,44 @@ async def start_server(req: StartRequest) -> StatusResponse:
             status_code=500,
             detail=f"'{config.LLAMA_SERVER_BIN}' binary not found. Set LLAMA_SERVER_BIN env var.",
         )
-    return manager.status()
+    return await manager.status()
 
 
 @router.post("/stop", response_model=StatusResponse)
 async def stop_server() -> StatusResponse:
+    await manager.cancel_restart()
     await manager.stop()
-    return manager.status()
+    return await manager.status()
+
+
+@router.post("/restart", response_model=RestartResponse)
+async def restart_server(req: StartRequest) -> RestartResponse:
+    """Apply new flags to the running server. Restarts immediately if it's
+    idle; if llama-server reports an in-flight generation (via /slots), the
+    restart is queued and applied automatically as soon as it finishes."""
+    models = {m.id: m for m in scan(config.MODELS_DIR)}
+    model = models.get(req.model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail=f"Model '{req.model_id}' not found")
+
+    if manager.state not in ("running", "starting"):
+        raise HTTPException(status_code=409, detail="Server is not running; use Start instead")
+
+    args = build_args(model.entry_path, req.flags)
+    try:
+        result = await manager.restart(model_id=model.id, binary=config.LLAMA_SERVER_BIN, args=args, flags=req.flags)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=500,
+            detail=f"'{config.LLAMA_SERVER_BIN}' binary not found. Set LLAMA_SERVER_BIN env var.",
+        )
+    return RestartResponse(result=result, status=await manager.status())
+
+
+@router.post("/restart/cancel", response_model=StatusResponse)
+async def cancel_restart() -> StatusResponse:
+    await manager.cancel_restart()
+    return await manager.status()
 
 
 @router.websocket("/logs")
