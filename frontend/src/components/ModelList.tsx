@@ -7,13 +7,23 @@ function formatSize(bytes: number): string {
 
 export function ModelList({
   models,
+  loading,
   selectedId,
   onSelect,
 }: {
   models: ModelInfo[];
+  loading: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
+  if (loading) {
+    return (
+      <p className="muted">
+        <span className="spinner" /> Scanning models directory…
+      </p>
+    );
+  }
+
   if (models.length === 0) {
     return <p className="muted">No .gguf files found in the models directory.</p>;
   }

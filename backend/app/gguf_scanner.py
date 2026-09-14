@@ -19,6 +19,22 @@ FILE_TYPE_NAMES = {
 }
 
 
+# Reading a GGUF header (via gguf.GGUFReader) is the expensive part of a scan -
+# it's what makes /api/models and the periodic /api/server/status poll slow on
+# large model directories. Cache by (path, mtime) so an unchanged file is only
+# parsed once per process lifetime instead of on every request.
+_metadata_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _read_gguf_metadata_cached(path: Path, mtime: float) -> dict:
+    cached = _metadata_cache.get(str(path))
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
+    meta = _read_gguf_metadata(path)
+    _metadata_cache[str(path)] = (mtime, meta)
+    return meta
+
+
 def _read_gguf_metadata(path: Path) -> dict:
     """Read only the GGUF header/metadata (no tensor data)."""
     try:
@@ -82,7 +98,7 @@ def scan(directory: Path) -> list[ModelInfo]:
     for base, parts in groups.items():
         parts.sort(key=lambda t: t[0])
         entry_path = parts[0][1]
-        meta = _read_gguf_metadata(entry_path)
+        meta = _read_gguf_metadata_cached(entry_path, entry_path.stat().st_mtime)
         model_parts = [
             ModelPart(filename=p.name, path=str(p), size_bytes=p.stat().st_size)
             for _, p in parts
@@ -100,8 +116,9 @@ def scan(directory: Path) -> list[ModelInfo]:
         ))
 
     for path in singles:
-        meta = _read_gguf_metadata(path)
-        size = path.stat().st_size
+        stat = path.stat()
+        meta = _read_gguf_metadata_cached(path, stat.st_mtime)
+        size = stat.st_size
         models.append(ModelInfo(
             id=path.stem,
             display_name=meta.get("name") or path.stem,

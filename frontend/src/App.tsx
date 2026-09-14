@@ -22,9 +22,16 @@ export default function App() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [syncedPid, setSyncedPid] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [actionPending, setActionPending] = useState<"start" | "stop" | null>(null);
+
+  const loadModels = () => {
+    setModelsLoading(true);
+    return api.listModels().then(setModels).catch((e) => setError(String(e))).finally(() => setModelsLoading(false));
+  };
 
   useEffect(() => {
-    api.listModels().then(setModels).catch((e) => setError(String(e)));
+    loadModels();
     api.listPresets().then(setPresets).catch((e) => setError(String(e)));
     api.getFlagSchema().then((s) => {
       setSchema(s);
@@ -65,12 +72,14 @@ export default function App() {
   const handleStart = () => {
     if (!selectedId) return;
     setError(null);
-    api.startServer(selectedId, values).then(setStatus).catch((e) => setError(String(e)));
+    setActionPending("start");
+    api.startServer(selectedId, values).then(setStatus).catch((e) => setError(String(e))).finally(() => setActionPending(null));
   };
 
   const handleStop = () => {
     setError(null);
-    api.stopServer().then(setStatus).catch((e) => setError(String(e)));
+    setActionPending("stop");
+    api.stopServer().then(setStatus).catch((e) => setError(String(e))).finally(() => setActionPending(null));
   };
 
   const handleSavePreset = (name: string) => {
@@ -105,8 +114,13 @@ export default function App() {
 
       <div className="layout">
         <section className="panel">
-          <h2>Models</h2>
-          <ModelList models={models} selectedId={selectedId} onSelect={setSelectedId} />
+          <div className="panel-header">
+            <h2>Models</h2>
+            <button className="icon-button" disabled={modelsLoading} onClick={loadModels} title="Rescan models directory">
+              {modelsLoading ? <span className="spinner" /> : "⟳"}
+            </button>
+          </div>
+          <ModelList models={models} loading={modelsLoading} selectedId={selectedId} onSelect={setSelectedId} />
         </section>
 
         <section className="panel">
@@ -123,7 +137,13 @@ export default function App() {
 
         <section className="panel wide">
           <h2>Server</h2>
-          <ServerControls status={status} canStart={selectedId !== null} onStart={handleStart} onStop={handleStop} />
+          <ServerControls
+            status={status}
+            canStart={selectedId !== null}
+            pending={actionPending}
+            onStart={handleStart}
+            onStop={handleStop}
+          />
           <LogViewer />
         </section>
       </div>
