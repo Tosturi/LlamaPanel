@@ -159,7 +159,14 @@ def main() -> None:
     import uvicorn
 
     print(f"LlamaPanel starting on http://{host}:{port}", flush=True)
-    uvicorn.run("app.main:app", host=host, port=port, reload=args.reload, app_dir=str(BACKEND))
+    uvicorn.run(
+        "app.main:app", host=host, port=port, reload=args.reload, app_dir=str(BACKEND),
+        # Without this, Ctrl+C hangs on "Waiting for background tasks to
+        # complete" forever: the /api/server/logs websocket (kept open by the
+        # UI's LogViewer) only ends when the client disconnects, and uvicorn
+        # otherwise waits for that indefinitely instead of cancelling it.
+        timeout_graceful_shutdown=5,
+    )
 
 
 if __name__ == "__main__":
