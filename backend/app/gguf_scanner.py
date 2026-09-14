@@ -1,4 +1,5 @@
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from app.schemas import ModelInfo, ModelPart
@@ -93,12 +94,23 @@ def scan(directory: Path) -> list[ModelInfo]:
         else:
             singles.append(path)
 
+    for parts in groups.values():
+        parts.sort(key=lambda t: t[0])
+
+    # Reading one file's GGUF header - opening it plus parsing its full tensor
+    # info table - is I/O-bound and, on a directory with several sizeable
+    # models, dominates scan time if done one file at a time. Fan the reads
+    # out across threads so they overlap instead of queueing up.
+    entry_paths = [parts[0][1] for parts in groups.values()] + singles
+    with ThreadPoolExecutor(max_workers=min(8, len(entry_paths)) or 1) as pool:
+        metas = list(pool.map(lambda p: _read_gguf_metadata_cached(p, p.stat().st_mtime), entry_paths))
+    meta_by_path = dict(zip(entry_paths, metas))
+
     models: list[ModelInfo] = []
 
     for base, parts in groups.items():
-        parts.sort(key=lambda t: t[0])
         entry_path = parts[0][1]
-        meta = _read_gguf_metadata_cached(entry_path, entry_path.stat().st_mtime)
+        meta = meta_by_path[entry_path]
         model_parts = [
             ModelPart(filename=p.name, path=str(p), size_bytes=p.stat().st_size)
             for _, p in parts
@@ -116,9 +128,8 @@ def scan(directory: Path) -> list[ModelInfo]:
         ))
 
     for path in singles:
-        stat = path.stat()
-        meta = _read_gguf_metadata_cached(path, stat.st_mtime)
-        size = stat.st_size
+        meta = meta_by_path[path]
+        size = path.stat().st_size
         models.append(ModelInfo(
             id=path.stem,
             display_name=meta.get("name") or path.stem,
