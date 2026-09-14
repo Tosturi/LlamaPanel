@@ -19,8 +19,9 @@ FLAG_SCHEMA: list[FlagDef] = [
         help="Keeps the KV cache on CPU/RAM even when model layers are offloaded to GPU.",
     ),
     FlagDef(
-        key="flash_attn", cli="--flash-attn", type="boolean",
-        label="Flash Attention", group="basic", default=True,
+        key="flash_attn", cli="--flash-attn", type="enum",
+        label="Flash Attention", group="basic", default="auto",
+        options=["on", "off", "auto"],
     ),
     FlagDef(
         key="host", cli="--host", type="string",
@@ -39,17 +40,17 @@ FLAG_SCHEMA: list[FlagDef] = [
     FlagDef(
         key="cache_type_k", cli="--cache-type-k", type="enum",
         label="KV Cache Type (K)", group="advanced",
-        options=["f16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"],
+        options=["f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"],
     ),
     FlagDef(
         key="cache_type_v", cli="--cache-type-v", type="enum",
         label="KV Cache Type (V)", group="advanced",
-        options=["f16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"],
+        options=["f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"],
     ),
     FlagDef(
         key="split_mode", cli="--split-mode", type="enum",
         label="Split Mode", group="advanced",
-        options=["none", "layer", "row"],
+        options=["none", "layer", "row", "tensor"],
     ),
     FlagDef(
         key="mmproj", cli="--mmproj", type="path",
@@ -70,13 +71,39 @@ FLAG_SCHEMA: list[FlagDef] = [
         label="CPU Threads", group="advanced",
     ),
     FlagDef(
-        key="spec_type", cli="--spec-type", type="string",
+        key="spec_type", cli="--spec-type", type="enum",
         label="Speculative Decoding Type (--spec-type)", group="advanced",
-        help="e.g. 'draft-mtp' for MTP-based speculative decoding.",
+        options=[
+            "none", "draft-simple", "draft-eagle3", "draft-mtp", "draft-dflash",
+            "draft-dspark", "ngram-simple", "ngram-map-k", "ngram-map-k4v",
+            "ngram-mod", "ngram-cache",
+        ],
+        help="llama-server also accepts a comma-separated list here for multiple types; pick one from this list to cover the common case.",
     ),
     FlagDef(
         key="spec_draft_n_max", cli="--spec-draft-n-max", type="number",
         label="Max Draft Tokens (--spec-draft-n-max)", group="advanced",
+    ),
+    FlagDef(
+        key="parallel", cli="--parallel", type="number",
+        label="Server Slots (--parallel)", group="advanced",
+        help="Number of concurrent request slots. -1 = auto.",
+    ),
+    FlagDef(
+        key="tensor_split", cli="--tensor-split", type="string",
+        label="Tensor Split (--tensor-split)", group="advanced",
+        help="Comma-separated per-GPU split ratios for multi-GPU setups, e.g. '3,1'.",
+    ),
+    FlagDef(
+        key="load_mode", cli="--load-mode", type="enum",
+        label="Model Load Mode (--load-mode)", group="advanced",
+        options=["auto", "none", "mmap", "mlock", "mmap+mlock", "dio"],
+        help="Replaces the old --mlock/--no-mmap flags. 'mlock' pins the model in RAM instead of letting it page out; 'mmap+mlock' keeps mmap's fast load with that same guarantee.",
+    ),
+    FlagDef(
+        key="api_key", cli="--api-key", type="string",
+        label="API Key (--api-key)", group="advanced",
+        help="Requires this key as a Bearer token on every request to llama-server's own API. Leave empty to leave it open.",
     ),
 ]
 
