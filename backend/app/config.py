@@ -5,7 +5,7 @@ MODELS_DIR = Path(os.environ.get("LLAMA_MODELS_DIR", "./models")).resolve()
 LLAMA_SERVER_BIN = os.environ.get("LLAMA_SERVER_BIN", "llama-server")
 LOG_BUFFER_SIZE = int(os.environ.get("LOG_BUFFER_SIZE", "2000"))
 
-DATA_DIR = Path(os.environ.get("LLAMAHANDLER_DATA_DIR", "./data")).resolve()
+DATA_DIR = Path(os.environ.get("LLAMAPANEL_DATA_DIR", "./data")).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 PRESETS_FILE = DATA_DIR / "presets.json"

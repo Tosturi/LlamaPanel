@@ -4,6 +4,7 @@ backend/app/__pycache__/
 backend/app/routers/__pycache__/
 **/__pycache__/
 *.pyc
+.mypy_cache/
 
 frontend/node_modules/
 # frontend/dist/ is intentionally NOT ignored - it's the pre-built frontend

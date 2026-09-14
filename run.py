@@ -139,8 +139,8 @@ def main() -> None:
     parser.add_argument("--reload", action="store_true", help="Auto-reload on code changes (development only)")
     args = parser.parse_args()
 
-    host = args.host or file_config.get("host") or os.environ.get("LLAMAHANDLER_HOST") or "127.0.0.1"
-    port = args.port or file_config.get("port") or int(os.environ.get("LLAMAHANDLER_PORT", "8000"))
+    host = args.host or file_config.get("host") or os.environ.get("LLAMAPANEL_HOST") or "127.0.0.1"
+    port = args.port or file_config.get("port") or int(os.environ.get("LLAMAPANEL_PORT", "8000"))
     models_dir = args.models_dir or file_config.get("models_dir")
     llama_bin = args.llama_bin or file_config.get("llama_bin")
     data_dir = args.data_dir or file_config.get("data_dir")
@@ -153,7 +153,7 @@ def main() -> None:
     if llama_bin:
         os.environ["LLAMA_SERVER_BIN"] = llama_bin
     if data_dir:
-        os.environ["LLAMAHANDLER_DATA_DIR"] = data_dir
+        os.environ["LLAMAPANEL_DATA_DIR"] = data_dir
 
     sys.path.insert(0, str(BACKEND))
     import uvicorn
