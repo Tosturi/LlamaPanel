@@ -3,7 +3,6 @@ from typing import Optional, TypedDict
 
 import psutil
 
-from app import config
 from app.flags import FLAG_SCHEMA
 from app.schemas import FlagValue
 
@@ -26,13 +25,13 @@ def _coerce(flag_type: str, raw: str) -> FlagValue:
             return raw
 
 
-def find_running_llama_server() -> Optional[DiscoveredProcess]:
-    """Scan OS processes for one matching our configured llama-server binary
-    and reconstruct (model_path, flags) from its argv. Used to adopt a
-    process we didn't spawn ourselves this run - started manually, or left
-    over from a previous instance of this panel that has since exited.
+def find_running_llama_server(server_bin: str) -> Optional[DiscoveredProcess]:
+    """Scan OS processes for one whose executable matches `server_bin` and
+    reconstruct (model_path, flags) from its argv. Used to adopt a process
+    we didn't spawn ourselves this run - started manually, or left over
+    from a previous instance of this panel that has since exited.
     """
-    bin_name = Path(config.LLAMA_SERVER_BIN).name.lower()
+    bin_name = Path(server_bin).name.lower()
     cli_to_flag = {f.cli: f for f in FLAG_SCHEMA}
 
     for proc in psutil.process_iter(["pid", "cmdline"]):

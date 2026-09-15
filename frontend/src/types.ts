@@ -1,63 +1,22 @@
-export interface ModelPart {
-  filename: string;
-  path: string;
-  size_bytes: number;
-}
+// Short names for the API types. The shapes themselves live in
+// api-types.ts, generated from the backend's OpenAPI schema (`npm run
+// gen:api`) - so when a pydantic model changes, `tsc` fails here instead
+// of the UI breaking at runtime. Only add aliases in this file, never
+// hand-written shapes.
+import type { components } from "./api-types";
 
-export interface ModelInfo {
-  id: string;
-  display_name: string;
-  entry_path: string;
-  parts: ModelPart[];
-  total_size_bytes: number;
-  architecture: string | null;
-  file_type: string | null;
-  context_length: number | null;
-  is_split: boolean;
-}
+type Schemas = components["schemas"];
 
-export type FlagType = "boolean" | "number" | "string" | "enum" | "path";
+export type ModelPart = Schemas["ModelPart"];
+export type ModelInfo = Schemas["ModelInfo"];
+export type FlagDef = Schemas["FlagDef"];
+export type FlagType = FlagDef["type"];
+export type StatusResponse = Schemas["StatusResponse"];
+export type ServerState = StatusResponse["state"];
+export type HealthResponse = Schemas["HealthResponse"];
+export type RestartResponse = Schemas["RestartResponse"];
+export type Preset = Schemas["Preset"];
+export type StartRequest = Schemas["StartRequest"];
+export type DeletedResponse = Schemas["DeletedResponse"];
 
-export interface FlagDef {
-  key: string;
-  cli: string;
-  type: FlagType;
-  label: string;
-  group: "basic" | "advanced";
-  default: boolean | number | string | null;
-  options: string[] | null;
-  help: string | null;
-}
-
-export type ServerState = "stopped" | "starting" | "running" | "stopping" | "crashed";
-
-export interface StatusResponse {
-  state: ServerState;
-  pid: number | null;
-  model_id: string | null;
-  args: string[] | null;
-  flags: FlagValues | null;
-  adopted: boolean;
-  started_at: number | null;
-  exit_code: number | null;
-  busy: boolean | null; // null = unknown (server unreachable, or started with --no-slots)
-  restart_pending: boolean;
-}
-
-export interface HealthResponse {
-  status: string;
-  version: string;
-}
-
-export interface RestartResponse {
-  result: "applied" | "queued";
-  status: StatusResponse;
-}
-
-export type FlagValues = Record<string, boolean | number | string | null>;
-
-export interface Preset {
-  name: string;
-  model_id: string;
-  flags: FlagValues;
-}
+export type FlagValues = StartRequest["flags"];
