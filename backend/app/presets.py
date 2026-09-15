@@ -1,84 +1,90 @@
-import json
-import os
-import tempfile
-from pathlib import Path
-from threading import Lock
+"""Named (model_id, flags) bundles persisted as one versioned JSON file.
 
-# On-disk format: {"version": 1, "presets": [...]}. The version field is
-# there so a future shape change can be migrated in _load() instead of
-# silently dropping the user's presets. Files written before this wrapper
-# existed were a bare list; _load() still accepts those.
-FORMAT_VERSION = 1
+Format history (see app.storage for the wrapper and migration mechanics):
+
+- v0: a bare JSON list of {"name", "model_id", "flags"} (before versioning).
+- v1: {"version": 1, "presets": [...]} - same entries, wrapped.
+- v2: entries gain "updated_at" (unix time, null for migrated ones).
+
+Flags are stored under the keys from FLAG_SCHEMA, and llama-server's CLI
+changes over time. Two things keep old presets usable when it does:
+
+- normalize_flags() runs on every read: renamed keys are mapped through
+  FLAG_RENAMES and values are coerced to the type the schema now declares.
+  That is data-driven, so a flag change is a schema edit plus a rename
+  entry, not a new format version.
+- Unknown keys are kept, never dropped. build_args() ignores them, so a
+  preset saved by a newer LlamaPanel still starts fine on an older one and
+  loses nothing when going back up.
+
+Routers only see list/upsert/delete; a format change is a new migration
+here, not a change in the API layer.
+"""
+
+from __future__ import annotations
+
+import time
+from pathlib import Path
+from typing import Any, Iterable, Optional
+
+from app.flags import normalize_flags
+from app.storage import JsonDocumentStore
+
+FORMAT_VERSION = 2
+
+
+def _migrate_v0_to_v1(payload: Any) -> list:
+    # v0 was the bare list; anything else means a file we can't interpret.
+    return payload if isinstance(payload, list) else []
+
+
+def _migrate_v1_to_v2(payload: Any) -> list:
+    items = payload if isinstance(payload, list) else []
+    return [{**p, "updated_at": p.get("updated_at")} for p in items if isinstance(p, dict)]
+
+
+MIGRATIONS = {0: _migrate_v0_to_v1, 1: _migrate_v1_to_v2}
+
+
+def _normalize_entry(p: dict) -> dict:
+    return {
+        "name": p["name"],
+        "model_id": p["model_id"],
+        "flags": normalize_flags(p.get("flags") or {}),
+        "updated_at": p.get("updated_at"),
+    }
 
 
 class PresetStore:
-    """Named (model_id, flags) bundles persisted as one JSON file.
-
-    Routers only see list/upsert/delete; the file format and atomic-write
-    dance are private so they can change (or move to a database once there
-    is a second entity worth storing) without touching the API layer.
-    """
-
     def __init__(self, path: Path) -> None:
-        self._path = path
-        self._lock = Lock()
+        self._store = JsonDocumentStore(
+            path, key="presets", version=FORMAT_VERSION, migrations=MIGRATIONS, empty=list,
+        )
 
     @property
     def path(self) -> Path:
-        return self._path
+        return self._store.path
 
-    def _load(self) -> list[dict]:
-        if not self._path.exists():
-            return []
-        try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
-        except Exception:
-            return []
-        if isinstance(data, list):  # legacy pre-versioned format
-            return data
-        if isinstance(data, dict) and isinstance(data.get("presets"), list):
-            return data["presets"]
-        return []
-
-    def _save(self, items: list[dict]) -> None:
-        """Write atomically: serialize to a temp file in the same directory,
-        then os.replace() it over the real one. A crash or power loss
-        mid-write then leaves the previous file intact instead of a truncated
-        JSON that _load() would read back as "no presets"."""
-        payload = json.dumps({"version": FORMAT_VERSION, "presets": items}, indent=2, ensure_ascii=False)
-        target = self._path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(dir=target.parent, prefix=target.name, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(payload)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp_path, target)
-        except BaseException:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
+    def adopt_legacy_file(self, candidates: Iterable[Path]) -> Optional[Path]:
+        return self._store.adopt_legacy_file(candidates)
 
     def list(self) -> list[dict]:
-        with self._lock:
-            return self._load()
+        return [_normalize_entry(p) for p in self._store.load() if isinstance(p, dict) and "name" in p]
 
     def upsert(self, name: str, model_id: str, flags: dict) -> dict:
-        with self._lock:
-            items = [p for p in self._load() if p["name"] != name]
-            preset = {"name": name, "model_id": model_id, "flags": flags}
-            items.append(preset)
-            self._save(items)
-            return preset
+        preset = _normalize_entry(
+            {"name": name, "model_id": model_id, "flags": flags, "updated_at": time.time()}
+        )
+        self._store.update(lambda items: [p for p in items if p.get("name") != name] + [preset])
+        return preset
 
     def delete(self, name: str) -> bool:
-        with self._lock:
-            items = self._load()
-            remaining = [p for p in items if p["name"] != name]
-            if len(remaining) == len(items):
-                return False
-            self._save(remaining)
-            return True
+        removed = {"any": False}
+
+        def drop(items: list) -> list:
+            remaining = [p for p in items if p.get("name") != name]
+            removed["any"] = len(remaining) != len(items)
+            return remaining
+
+        self._store.update(drop)
+        return removed["any"]

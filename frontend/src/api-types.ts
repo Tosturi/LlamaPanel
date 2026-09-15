@@ -274,6 +274,8 @@ export interface components {
             model_id: string;
             /** Name */
             name: string;
+            /** Updated At */
+            updated_at?: number | null;
         };
         /** RestartResponse */
         RestartResponse: {

@@ -54,6 +54,9 @@ class Preset(BaseModel):
     name: str
     model_id: str
     flags: dict[str, FlagValue] = {}
+    # Unix time of the last save; None for presets migrated from older files.
+    # Set by the server, ignored on input.
+    updated_at: Optional[float] = None
 
 
 ServerState = Literal["stopped", "starting", "running", "stopping", "crashed"]

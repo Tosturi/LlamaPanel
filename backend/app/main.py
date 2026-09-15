@@ -29,6 +29,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         client = LlamaClient()
         app.state.settings = settings
         app.state.presets = PresetStore(settings.presets_file)
+        # First start after moving data_dir out of the install tree: pick up
+        # presets an older release wrote next to run.py instead of showing
+        # an empty list. No-op once data_dir has its own presets.json.
+        app.state.presets.adopt_legacy_file(settings.legacy_presets_files)
         app.state.manager = ProcessManager(settings, client)
         try:
             yield

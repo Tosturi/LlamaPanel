@@ -13,7 +13,9 @@ frontend/node_modules/
 frontend/dist/
 frontend/tsconfig.tsbuildinfo
 
-# Runtime state (presets, llama-server log) - local to each machine.
+# Runtime state (presets, llama-server log) from releases that kept it next
+# to run.py. Newer versions store it in the per-user data dir instead, but
+# an explicit data_dir may still point here.
 /data/
 
 # Local machine config (models_dir, llama_bin, port, ...) - copy from
