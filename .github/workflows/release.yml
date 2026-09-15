@@ -1,0 +1,124 @@
+name: Release
+
+# Cut a GitHub Release when a version tag is pushed:
+#
+#   echo 0.2.0 > VERSION && git commit -am "Bump version to 0.2.0"
+#   git tag v0.2.0 && git push && git push origin v0.2.0
+#
+# The tag must match the VERSION file exactly (v<VERSION>) - otherwise the
+# run fails before building anything. The release ships a zip with the
+# frontend pre-built, so the target machine only needs Python.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history + tags, needed for the changelog
+
+      - name: Check tag matches VERSION
+        id: version
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          tag="${GITHUB_REF_NAME}"
+          if [ "v${version}" != "${tag}" ]; then
+            echo "::error::Tag ${tag} does not match VERSION file (${version}). Bump VERSION first."
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Run backend tests
+        working-directory: backend
+        run: |
+          pip install -r requirements-dev.txt
+          pytest -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Assemble release zip
+        id: zip
+        run: |
+          name="LlamaPanel-v${{ steps.version.outputs.version }}"
+          stage="dist-release/LlamaPanel"
+          mkdir -p "${stage}/backend" "${stage}/frontend"
+
+          cp run.py VERSION README.md config.example.ini "${stage}/"
+          [ -f LICENSE ] && cp LICENSE "${stage}/" || true
+          cp backend/requirements.txt "${stage}/backend/"
+          cp -r backend/app "${stage}/backend/app"
+          cp -r frontend/dist "${stage}/frontend/dist"
+          find "${stage}" -name '__pycache__' -type d -prune -exec rm -rf {} +
+
+          (cd dist-release && zip -qr "../${name}.zip" LlamaPanel)
+          sha256sum "${name}.zip" > "${name}.zip.sha256"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        run: |
+          current="${GITHUB_REF_NAME}"
+          previous="$(git tag --sort=-v:refname --list 'v*' | grep -vx "${current}" | head -n1 || true)"
+
+          {
+            echo "## LlamaPanel ${current}"
+            echo
+            if [ -n "${previous}" ]; then
+              echo "Changes since ${previous}:"
+              range="${previous}..${current}"
+            else
+              echo "First release. Commits:"
+              range="${current}"
+            fi
+            echo
+            git log "${range}" --no-merges --pretty='format:- %s (%h)' \
+              | grep -v -E '^\- (chore: rebuild frontend dist|Bump version)' || true
+            echo
+            echo
+            echo "## Install"
+            echo
+            echo '```bash'
+            echo "unzip ${{ steps.zip.outputs.name }}.zip && cd LlamaPanel"
+            echo "cp config.example.ini config.ini   # set models_dir / server_bin"
+            echo "python run.py"
+            echo '```'
+            echo
+            echo "Requires Python 3.12+ on the target machine; the web UI is pre-built. See README for details."
+            if [ -n "${previous}" ]; then
+              echo
+              echo "Full diff: https://github.com/${GITHUB_REPOSITORY}/compare/${previous}...${current}"
+            fi
+          } > release-notes.md
+
+          cat release-notes.md
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "LlamaPanel ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            "${{ steps.zip.outputs.name }}.zip" \
+            "${{ steps.zip.outputs.name }}.zip.sha256"

@@ -48,6 +48,28 @@ async def test_is_busy_falls_back_to_default_host_and_port_when_unset(monkeypatc
     assert seen == {"host": "127.0.0.1", "port": 8080}
 
 
+# --- log tailer lifecycle --------------------------------------------------
+
+async def test_starting_a_new_tail_cancels_the_previous_one():
+    pm = ProcessManager()
+    pm._state = "running"
+
+    pm._start_tail(from_start=False)
+    first = pm._tail_task
+    pm._start_tail(from_start=False)
+    second = pm._tail_task
+
+    await asyncio.sleep(0)  # let cancellation propagate
+    assert first is not second
+    assert first.cancelled()
+    assert not second.done()
+
+    pm._cancel_tail()
+    await asyncio.sleep(0)
+    assert second.cancelled()
+    assert pm._tail_task is None
+
+
 # --- restart() -------------------------------------------------------------
 
 async def test_restart_applies_immediately_when_idle(monkeypatch):

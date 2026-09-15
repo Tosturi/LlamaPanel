@@ -1,4 +1,4 @@
-import type { FlagDef, FlagValues, ModelInfo, Preset, RestartResponse, StatusResponse } from "./types";
+import type { FlagDef, FlagValues, HealthResponse, ModelInfo, Preset, RestartResponse, StatusResponse } from "./types";
 
 // Relative to the current origin: works both in Vite dev (proxied, see
 // vite.config.ts) and in production, where FastAPI serves the built
@@ -14,6 +14,8 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export const api = {
+  getHealth: () => fetch(`${BASE}/api/health`).then((r) => json<HealthResponse>(r)),
+
   listModels: () => fetch(`${BASE}/api/models`).then((r) => json<ModelInfo[]>(r)),
 
   getFlagSchema: () => fetch(`${BASE}/api/server/flags`).then((r) => json<FlagDef[]>(r)),

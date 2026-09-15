@@ -44,6 +44,11 @@ export interface StatusResponse {
   restart_pending: boolean;
 }
 
+export interface HealthResponse {
+  status: string;
+  version: string;
+}
+
 export interface RestartResponse {
   result: "applied" | "queued";
   status: StatusResponse;

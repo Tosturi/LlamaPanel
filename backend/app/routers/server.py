@@ -57,7 +57,7 @@ async def start_server(req: StartRequest) -> StatusResponse:
     except FileNotFoundError:
         raise HTTPException(
             status_code=500,
-            detail=f"'{config.LLAMA_SERVER_BIN}' binary not found. Set LLAMA_SERVER_BIN env var.",
+            detail=f"'{config.LLAMA_SERVER_BIN}' binary not found. Set server_bin in config.ini or LLAMAPANEL_SERVER_BIN.",
         )
     return await manager.status()
 
@@ -88,7 +88,7 @@ async def restart_server(req: StartRequest) -> RestartResponse:
     except FileNotFoundError:
         raise HTTPException(
             status_code=500,
-            detail=f"'{config.LLAMA_SERVER_BIN}' binary not found. Set LLAMA_SERVER_BIN env var.",
+            detail=f"'{config.LLAMA_SERVER_BIN}' binary not found. Set server_bin in config.ini or LLAMAPANEL_SERVER_BIN.",
         )
     return RestartResponse(result=result, status=await manager.status())
 

@@ -3,15 +3,15 @@
 Single entry point for LlamaPanel.
 
 Meant to run ON the GPU machine that also has llama.cpp and the model files.
-Requires only *some* Python (3.12+) there to bootstrap - the frontend is
-already pre-built into frontend/dist and committed to the repo, so no
-Node.js is needed on that box.
+Requires only *some* Python (3.12+) there to bootstrap. The frontend must be
+present in frontend/dist: release zips ship it pre-built, a git checkout
+needs `npm run build` in frontend/ first.
 
 Configuration, in order of precedence (highest wins):
     1. CLI flags            python run.py --port 9000
     2. config.ini            copy config.example.ini -> config.ini and edit
-    3. environment variables LLAMA_MODELS_DIR, LLAMA_SERVER_BIN, ...
-    4. built-in defaults
+    3. environment variables LLAMAPANEL_MODELS_DIR, LLAMAPANEL_SERVER_BIN, ...
+    4. built-in defaults     (models/ and data/ next to this file)
 
 On first run, this also creates an isolated venv at ./.venv using whatever
 Python launched this script, re-launches itself inside it, and installs
@@ -148,17 +148,32 @@ def main() -> None:
     if not CONFIG_FILE.exists():
         print(f"(no config.ini found - copy config.example.ini to set defaults; using CLI flags/env vars for now)", flush=True)
 
+    # Hand the resolved values to the backend via env vars. Directory defaults
+    # are anchored to this file, not to the cwd - otherwise running
+    # `python /opt/LlamaPanel/run.py` from $HOME would create ~/data.
     if models_dir:
-        os.environ["LLAMA_MODELS_DIR"] = models_dir
+        os.environ["LLAMAPANEL_MODELS_DIR"] = models_dir
+    elif not (os.environ.get("LLAMAPANEL_MODELS_DIR") or os.environ.get("LLAMA_MODELS_DIR")):
+        os.environ["LLAMAPANEL_MODELS_DIR"] = str(ROOT / "models")
     if llama_bin:
-        os.environ["LLAMA_SERVER_BIN"] = llama_bin
+        os.environ["LLAMAPANEL_SERVER_BIN"] = llama_bin
     if data_dir:
         os.environ["LLAMAPANEL_DATA_DIR"] = data_dir
+    elif not os.environ.get("LLAMAPANEL_DATA_DIR"):
+        os.environ["LLAMAPANEL_DATA_DIR"] = str(ROOT / "data")
 
     sys.path.insert(0, str(BACKEND))
     import uvicorn
+    from app import __version__
 
-    print(f"LlamaPanel starting on http://{host}:{port}", flush=True)
+    if not (ROOT / "frontend" / "dist" / "index.html").exists():
+        print(
+            "WARNING: frontend/dist not found - the web UI will not be served.\n"
+            "         Download a release zip (ships pre-built), or run `npm ci && npm run build` in frontend/.",
+            flush=True,
+        )
+
+    print(f"LlamaPanel {__version__} starting on http://{host}:{port}", flush=True)
     uvicorn.run(
         "app.main:app", host=host, port=port, reload=args.reload, app_dir=str(BACKEND),
         # Without this, Ctrl+C hangs on "Waiting for background tasks to

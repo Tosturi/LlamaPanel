@@ -1,11 +1,22 @@
 import os
 from pathlib import Path
 
-MODELS_DIR = Path(os.environ.get("LLAMA_MODELS_DIR", "./models")).resolve()
-LLAMA_SERVER_BIN = os.environ.get("LLAMA_SERVER_BIN", "llama-server")
-LOG_BUFFER_SIZE = int(os.environ.get("LOG_BUFFER_SIZE", "2000"))
 
-DATA_DIR = Path(os.environ.get("LLAMAPANEL_DATA_DIR", "./data")).resolve()
+def _env(name: str, *legacy: str, default: str) -> str:
+    """Read LLAMAPANEL_<name>, falling back to older env var spellings that
+    predate the unified prefix so existing setups keep working."""
+    for key in (f"LLAMAPANEL_{name}", *legacy):
+        value = os.environ.get(key)
+        if value:
+            return value
+    return default
+
+
+MODELS_DIR = Path(_env("MODELS_DIR", "LLAMA_MODELS_DIR", default="./models")).resolve()
+LLAMA_SERVER_BIN = _env("SERVER_BIN", "LLAMA_SERVER_BIN", default="llama-server")
+LOG_BUFFER_SIZE = int(_env("LOG_BUFFER_SIZE", "LOG_BUFFER_SIZE", default="2000"))
+
+DATA_DIR = Path(_env("DATA_DIR", default="./data")).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 PRESETS_FILE = DATA_DIR / "presets.json"

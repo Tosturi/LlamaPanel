@@ -1,0 +1,82 @@
+name: Bump version
+
+# Manual trigger: Actions -> "Bump version" -> Run workflow -> enter e.g. 0.2.0.
+#
+# Writes VERSION, commits it to main, tags the commit v<version> and pushes
+# both. The tag push then triggers release.yml, which builds and publishes
+# the release.
+#
+# Needs the RELEASE_TOKEN secret (a fine-grained PAT with contents:write on
+# this repo). The default GITHUB_TOKEN can push the tag too, but events it
+# creates never trigger other workflows, so release.yml would not run.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version (X.Y.Z, without the v prefix)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bump-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Validate version
+        env:
+          NEW: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$NEW" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must look like X.Y.Z (got '$NEW')"
+            exit 1
+          fi
+
+          current="$(tr -d '[:space:]' < VERSION)"
+          if [ "$NEW" = "$current" ]; then
+            echo "::error::VERSION is already $current"
+            exit 1
+          fi
+          # Newest of the two must be the new one, i.e. only allow bumping up.
+          if [ "$(printf '%s\n%s\n' "$current" "$NEW" | sort -V | tail -n1)" != "$NEW" ]; then
+            echo "::error::$NEW is not newer than current version $current"
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/v$NEW" >/dev/null 2>&1; then
+            echo "::error::Tag v$NEW already exists"
+            exit 1
+          fi
+          echo "Bumping $current -> $NEW"
+
+      - name: Commit, tag and push
+        env:
+          NEW: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          printf '%s\n' "$NEW" > VERSION
+          git add VERSION
+          git commit -m "Bump version to $NEW"
+          git tag -a "v$NEW" -m "LlamaPanel v$NEW"
+
+          # Push the commit first; if main moved under us this fails cleanly
+          # and no tag is left behind pointing at an unpublished commit.
+          git push origin HEAD:main
+          git push origin "v$NEW"
+
+          echo "::notice::Pushed v$NEW - release.yml will now build and publish it."

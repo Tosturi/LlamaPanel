@@ -8,8 +8,10 @@ backend/app/routers/__pycache__/
 .pytest_cache/
 
 frontend/node_modules/
-# frontend/dist/ is intentionally NOT ignored - it's the pre-built frontend
-# committed so a machine without Node.js can still run it.
+# Build output. Release zips ship a pre-built dist/; a git checkout builds
+# it locally with `npm run build`.
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
 
 # Runtime state (presets, llama-server log) - local to each machine.
 /data/

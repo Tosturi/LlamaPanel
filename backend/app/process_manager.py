@@ -119,8 +119,22 @@ class ProcessManager:
             self._started_at = time.time()
             self._state = "running"
 
-            self._tail_task = asyncio.create_task(self._tail_log_file(from_start=False))
+            self._start_tail(from_start=False)
             asyncio.create_task(self._watch_exit())
+
+    def _start_tail(self, from_start: bool) -> None:
+        """Replace the log tailer. The previous one must be cancelled
+        explicitly: it only exits on its own when it observes a non-running
+        state, and a restart flips stopped -> starting faster than its
+        0.3s poll, so it would otherwise keep going and every line would be
+        emitted twice (once per tailer)."""
+        self._cancel_tail()
+        self._tail_task = asyncio.create_task(self._tail_log_file(from_start=from_start))
+
+    def _cancel_tail(self) -> None:
+        if self._tail_task is not None and not self._tail_task.done():
+            self._tail_task.cancel()
+        self._tail_task = None
 
     def adopt(self, pid: int, model_id: Optional[str], flags: dict[str, FlagValue]) -> None:
         """Recognize an already-running llama-server this panel didn't spawn."""
@@ -136,7 +150,7 @@ class ProcessManager:
         self._started_at = None
         self._state = "running"
         self._emit(f"[adopted already-running llama-server, pid={pid}]")
-        self._tail_task = asyncio.create_task(self._tail_log_file(from_start=True))
+        self._start_tail(from_start=True)
         asyncio.create_task(self._watch_adopted())
 
     async def _tail_log_file(self, from_start: bool) -> None:
@@ -155,6 +169,8 @@ class ProcessManager:
                         await asyncio.sleep(0.3)
                     else:
                         break
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             self._emit(f"[log tail error: {exc}]")
 
@@ -181,6 +197,7 @@ class ProcessManager:
                 return
             self._state = "stopping"
             self._stop_requested = True
+            self._cancel_tail()
 
             if self._adopted:
                 try:

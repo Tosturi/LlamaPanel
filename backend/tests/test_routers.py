@@ -1,15 +1,18 @@
 from fastapi.testclient import TestClient
 
-from app import config
+from app import __version__, config
 from app.main import app
 
 client = TestClient(app)
 
 
-def test_health_endpoint():
+def test_health_endpoint_reports_version():
     resp = client.get("/api/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["version"] == __version__
+    assert body["version"] != "unknown"
 
 
 def test_flags_endpoint_returns_the_flag_schema():

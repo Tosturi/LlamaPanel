@@ -24,6 +24,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [actionPending, setActionPending] = useState<"start" | "stop" | "reload" | null>(null);
+  const [version, setVersion] = useState<string | null>(null);
 
   const loadModels = () => {
     setModelsLoading(true);
@@ -32,6 +33,7 @@ export default function App() {
 
   useEffect(() => {
     loadModels();
+    api.getHealth().then((h) => setVersion(h.version)).catch(() => {});
     api.listPresets().then(setPresets).catch((e) => setError(String(e)));
     api.getFlagSchema().then((s) => {
       setSchema(s);
@@ -123,7 +125,9 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>LlamaPanel</h1>
+        <h1>
+          LlamaPanel {version && <span className="muted version">v{version}</span>}
+        </h1>
       </header>
 
       {error && <div className="error-banner">{error}</div>}

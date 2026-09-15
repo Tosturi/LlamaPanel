@@ -1,3 +1,5 @@
+import json
+
 from app import presets
 
 
@@ -45,3 +47,31 @@ def test_list_presets_tolerates_corrupt_json_file(tmp_path, monkeypatch):
     monkeypatch.setattr(presets.config, "PRESETS_FILE", f)
 
     assert presets.list_presets() == []
+
+
+def test_save_writes_versioned_wrapper(tmp_path, monkeypatch):
+    f = tmp_path / "presets.json"
+    monkeypatch.setattr(presets.config, "PRESETS_FILE", f)
+
+    presets.upsert_preset("p1", "model-a", {})
+
+    data = json.loads(f.read_text(encoding="utf-8"))
+    assert data["version"] == presets.FORMAT_VERSION
+    assert [p["name"] for p in data["presets"]] == ["p1"]
+
+
+def test_load_accepts_legacy_bare_list_format(tmp_path, monkeypatch):
+    f = tmp_path / "presets.json"
+    f.write_text(json.dumps([{"name": "old", "model_id": "m", "flags": {}}]), encoding="utf-8")
+    monkeypatch.setattr(presets.config, "PRESETS_FILE", f)
+
+    assert [p["name"] for p in presets.list_presets()] == ["old"]
+
+
+def test_save_leaves_no_temp_files_behind(tmp_path, monkeypatch):
+    monkeypatch.setattr(presets.config, "PRESETS_FILE", tmp_path / "presets.json")
+
+    presets.upsert_preset("p1", "model-a", {})
+    presets.delete_preset("p1")
+
+    assert [p.name for p in tmp_path.iterdir()] == ["presets.json"]
