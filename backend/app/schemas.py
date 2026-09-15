@@ -1,14 +1,24 @@
 from typing import Literal, Optional, Union
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
-class ModelPart(BaseModel):
+class ResponseModel(BaseModel):
+    """Base for everything the API returns. FastAPI always serializes every
+    field of a response model (defaults included), so in the OpenAPI schema
+    those fields are marked required. Without this, `Optional[x] = None`
+    fields would come out as `x?: ...` in the generated TypeScript types
+    and every consumer would need a `?? null`."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+
+class ModelPart(ResponseModel):
     filename: str
     path: str
     size_bytes: int
 
 
-class ModelInfo(BaseModel):
+class ModelInfo(ResponseModel):
     id: str  # stable id: base name (without split suffix)
     display_name: str
     entry_path: str  # path to pass to llama-server (first part, or the file itself)
@@ -24,7 +34,7 @@ FlagType = Literal["boolean", "number", "string", "enum", "path"]
 FlagValue = Union[bool, int, float, str, None]
 
 
-class FlagDef(BaseModel):
+class FlagDef(ResponseModel):
     key: str
     cli: str
     type: FlagType
@@ -49,7 +59,7 @@ class Preset(BaseModel):
 ServerState = Literal["stopped", "starting", "running", "stopping", "crashed"]
 
 
-class StatusResponse(BaseModel):
+class StatusResponse(ResponseModel):
     state: ServerState
     pid: Optional[int] = None
     model_id: Optional[str] = None
@@ -62,6 +72,15 @@ class StatusResponse(BaseModel):
     restart_pending: bool = False
 
 
-class RestartResponse(BaseModel):
+class RestartResponse(ResponseModel):
     result: Literal["applied", "queued"]
     status: StatusResponse
+
+
+class HealthResponse(ResponseModel):
+    status: Literal["ok"]
+    version: str
+
+
+class DeletedResponse(ResponseModel):
+    deleted: str

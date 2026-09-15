@@ -25,7 +25,6 @@ class _FakeProcess:
 
 
 def test_find_running_llama_server_parses_model_and_flags(monkeypatch):
-    monkeypatch.setattr(discovery.config, "LLAMA_SERVER_BIN", "llama-server")
     cmdline = [
         "llama-server", "--model", "/models/foo.gguf",
         "--ctx-size", "8192", "--no-kv-offload", "--flash-attn", "auto",
@@ -33,7 +32,7 @@ def test_find_running_llama_server_parses_model_and_flags(monkeypatch):
     fake_proc = _FakeProcess(pid=123, cmdline=cmdline)
     monkeypatch.setattr(discovery.psutil, "process_iter", lambda attrs: iter([fake_proc]))
 
-    found = discovery.find_running_llama_server()
+    found = discovery.find_running_llama_server("llama-server")
 
     assert found is not None
     assert found["pid"] == 123
@@ -44,16 +43,13 @@ def test_find_running_llama_server_parses_model_and_flags(monkeypatch):
 
 
 def test_find_running_llama_server_returns_none_when_no_match(monkeypatch):
-    monkeypatch.setattr(discovery.config, "LLAMA_SERVER_BIN", "llama-server")
     fake_proc = _FakeProcess(pid=1, cmdline=["python", "other.py"])
     monkeypatch.setattr(discovery.psutil, "process_iter", lambda attrs: iter([fake_proc]))
 
-    assert discovery.find_running_llama_server() is None
+    assert discovery.find_running_llama_server("llama-server") is None
 
 
 def test_find_running_llama_server_skips_processes_it_cannot_inspect(monkeypatch):
-    monkeypatch.setattr(discovery.config, "LLAMA_SERVER_BIN", "llama-server")
-
     class _RaisingProcess:
         @property
         def info(self):
@@ -64,5 +60,5 @@ def test_find_running_llama_server_skips_processes_it_cannot_inspect(monkeypatch
         discovery.psutil, "process_iter", lambda attrs: iter([_RaisingProcess(), good])
     )
 
-    found = discovery.find_running_llama_server()
+    found = discovery.find_running_llama_server("llama-server")
     assert found["pid"] == 2

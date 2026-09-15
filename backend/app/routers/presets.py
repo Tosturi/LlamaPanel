@@ -1,25 +1,25 @@
 from fastapi import APIRouter, HTTPException
 
-from app import presets as presets_store
-from app.schemas import Preset
+from app.deps import PresetsDep
+from app.schemas import DeletedResponse, Preset
 
 router = APIRouter(prefix="/api/presets", tags=["presets"])
 
 
 @router.get("", response_model=list[Preset])
-def list_presets() -> list[dict]:
-    return presets_store.list_presets()
+def list_presets(store: PresetsDep) -> list[dict]:
+    return store.list()
 
 
 @router.put("/{name}", response_model=Preset)
-def save_preset(name: str, preset: Preset) -> dict:
+def save_preset(name: str, preset: Preset, store: PresetsDep) -> dict:
     if preset.name != name:
         raise HTTPException(status_code=400, detail="Preset name in body must match URL")
-    return presets_store.upsert_preset(name, preset.model_id, preset.flags)
+    return store.upsert(name, preset.model_id, preset.flags)
 
 
-@router.delete("/{name}")
-def delete_preset(name: str) -> dict:
-    if not presets_store.delete_preset(name):
+@router.delete("/{name}", response_model=DeletedResponse)
+def delete_preset(name: str, store: PresetsDep) -> DeletedResponse:
+    if not store.delete(name):
         raise HTTPException(status_code=404, detail=f"Preset '{name}' not found")
-    return {"deleted": name}
+    return DeletedResponse(deleted=name)

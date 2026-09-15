@@ -21,6 +21,7 @@ it just re-execs into the existing venv and starts the server.
 
 import argparse
 import configparser
+import dataclasses
 import os
 import subprocess
 import sys
@@ -67,6 +68,7 @@ def ensure_dependencies() -> None:
     try:
         import fastapi  # noqa: F401
         import gguf  # noqa: F401
+        import httpx  # noqa: F401
         import psutil  # noqa: F401
         import uvicorn  # noqa: F401
     except ImportError:
@@ -141,32 +143,30 @@ def main() -> None:
 
     host = args.host or file_config.get("host") or os.environ.get("LLAMAPANEL_HOST") or "127.0.0.1"
     port = args.port or file_config.get("port") or int(os.environ.get("LLAMAPANEL_PORT", "8000"))
-    models_dir = args.models_dir or file_config.get("models_dir")
-    llama_bin = args.llama_bin or file_config.get("llama_bin")
-    data_dir = args.data_dir or file_config.get("data_dir")
 
     if not CONFIG_FILE.exists():
-        print(f"(no config.ini found - copy config.example.ini to set defaults; using CLI flags/env vars for now)", flush=True)
-
-    # Hand the resolved values to the backend via env vars. Directory defaults
-    # are anchored to this file, not to the cwd - otherwise running
-    # `python /opt/LlamaPanel/run.py` from $HOME would create ~/data.
-    if models_dir:
-        os.environ["LLAMAPANEL_MODELS_DIR"] = models_dir
-    elif not (os.environ.get("LLAMAPANEL_MODELS_DIR") or os.environ.get("LLAMA_MODELS_DIR")):
-        os.environ["LLAMAPANEL_MODELS_DIR"] = str(ROOT / "models")
-    if llama_bin:
-        os.environ["LLAMAPANEL_SERVER_BIN"] = llama_bin
-    if data_dir:
-        os.environ["LLAMAPANEL_DATA_DIR"] = data_dir
-    elif not os.environ.get("LLAMAPANEL_DATA_DIR"):
-        os.environ["LLAMAPANEL_DATA_DIR"] = str(ROOT / "data")
+        print("(no config.ini found - copy config.example.ini to set defaults; using CLI flags/env vars for now)", flush=True)
 
     sys.path.insert(0, str(BACKEND))
     import uvicorn
     from app import __version__
+    from app.main import create_app
+    from app.settings import Settings
 
-    if not (ROOT / "frontend" / "dist" / "index.html").exists():
+    # Layer the config: env vars (with legacy aliases) first, then config.ini,
+    # then CLI flags on top. Directory defaults inside Settings are anchored
+    # to this file, not the cwd - otherwise `python /opt/LlamaPanel/run.py`
+    # run from $HOME would create ~/data.
+    overrides = {}
+    if models_dir := (args.models_dir or file_config.get("models_dir")):
+        overrides["models_dir"] = Path(models_dir).resolve()
+    if llama_bin := (args.llama_bin or file_config.get("llama_bin")):
+        overrides["server_bin"] = llama_bin
+    if data_dir := (args.data_dir or file_config.get("data_dir")):
+        overrides["data_dir"] = Path(data_dir).resolve()
+    settings = dataclasses.replace(Settings.from_env(), **overrides)
+
+    if not (settings.frontend_dist / "index.html").exists():
         print(
             "WARNING: frontend/dist not found - the web UI will not be served.\n"
             "         Download a release zip (ships pre-built), or run `npm ci && npm run build` in frontend/.",
@@ -174,14 +174,21 @@ def main() -> None:
         )
 
     print(f"LlamaPanel {__version__} starting on http://{host}:{port}", flush=True)
-    uvicorn.run(
-        "app.main:app", host=host, port=port, reload=args.reload, app_dir=str(BACKEND),
-        # Without this, Ctrl+C hangs on "Waiting for background tasks to
-        # complete" forever: the /api/server/logs websocket (kept open by the
-        # UI's LogViewer) only ends when the client disconnects, and uvicorn
-        # otherwise waits for that indefinitely instead of cancelling it.
-        timeout_graceful_shutdown=5,
-    )
+    # Without timeout_graceful_shutdown, Ctrl+C hangs on "Waiting for
+    # background tasks to complete" forever: the /api/server/logs websocket
+    # (kept open by the UI's LogViewer) only ends when the client disconnects,
+    # and uvicorn otherwise waits for that indefinitely.
+    if args.reload:
+        # --reload re-imports the app in a fresh process on every change, so
+        # it needs an import string, not an object. Pass the resolved
+        # settings through the environment for that child to pick up.
+        os.environ.update(settings.to_env())
+        uvicorn.run(
+            "app.main:create_app", factory=True, host=host, port=port, reload=True,
+            app_dir=str(BACKEND), timeout_graceful_shutdown=5,
+        )
+    else:
+        uvicorn.run(create_app(settings), host=host, port=port, timeout_graceful_shutdown=5)
 
 
 if __name__ == "__main__":

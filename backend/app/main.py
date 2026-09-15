@@ -1,39 +1,67 @@
-from pathlib import Path
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Optional
 
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.llama_client import LlamaClient
+from app.presets import PresetStore
+from app.process_manager import ProcessManager
 from app.routers import models, presets, server
-
-app = FastAPI(title="LlamaPanel", version=__version__)
-
-app.include_router(models.router)
-app.include_router(server.router)
-app.include_router(presets.router)
+from app.schemas import HealthResponse
+from app.settings import Settings
 
 
-@app.get("/api/health")
-def health() -> dict:
-    return {"status": "ok", "version": __version__}
+def create_app(settings: Optional[Settings] = None) -> FastAPI:
+    """Application factory. Everything with state or side effects (data
+    dir, llama-server client, process manager) is created inside lifespan
+    and lives on app.state; routers reach it through app.deps. Passing an
+    explicit Settings is how run.py and the tests configure the app -
+    the environment is only consulted when none is given (uvicorn --reload
+    imports "app.main:create_app" by string and can't pass one)."""
+    settings = settings or Settings.from_env()
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        settings.ensure_dirs()
+        client = LlamaClient()
+        app.state.settings = settings
+        app.state.presets = PresetStore(settings.presets_file)
+        app.state.manager = ProcessManager(settings, client)
+        try:
+            yield
+        finally:
+            await app.state.manager.shutdown()
+            await client.aclose()
 
-# Serve the pre-built frontend (frontend/dist) as static files, so the whole
-# app is one process on one port. Mounted last so it never shadows /api/*.
-# Release zips ship dist/ pre-built; a git checkout has to run `npm run build`
-# first. In `npm run dev`, Vite serves the frontend itself and proxies /api
-# here, so the mount is irrelevant there.
-_frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
-if (_frontend_dist / "index.html").exists():
-    app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")
-else:
-    @app.get("/", include_in_schema=False)
-    def frontend_missing() -> PlainTextResponse:
-        return PlainTextResponse(
-            "LlamaPanel API is running, but the web UI is not built.\n\n"
-            "Either download a release zip (it ships with the UI pre-built), or from a\n"
-            "git checkout run:  cd frontend && npm ci && npm run build\n"
-            "then restart run.py.\n",
-            status_code=503,
-        )
+    app = FastAPI(title="LlamaPanel", version=__version__, lifespan=lifespan)
+
+    app.include_router(models.router)
+    app.include_router(server.router)
+    app.include_router(presets.router)
+
+    @app.get("/api/health", response_model=HealthResponse)
+    def health() -> HealthResponse:
+        return HealthResponse(status="ok", version=__version__)
+
+    # Serve the pre-built frontend as static files, so the whole app is one
+    # process on one port. Mounted last so it never shadows /api/*. Release
+    # zips ship dist/ pre-built; a git checkout has to run `npm run build`
+    # first. In `npm run dev`, Vite serves the frontend itself and proxies
+    # /api here, so the mount is irrelevant there.
+    if (settings.frontend_dist / "index.html").exists():
+        app.mount("/", StaticFiles(directory=str(settings.frontend_dist), html=True), name="frontend")
+    else:
+        @app.get("/", include_in_schema=False)
+        def frontend_missing() -> PlainTextResponse:
+            return PlainTextResponse(
+                "LlamaPanel API is running, but the web UI is not built.\n\n"
+                "Either download a release zip (it ships with the UI pre-built), or from a\n"
+                "git checkout run:  cd frontend && npm ci && npm run build\n"
+                "then restart run.py.\n",
+                status_code=503,
+            )
+
+    return app

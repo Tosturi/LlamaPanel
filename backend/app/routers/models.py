@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app import config
+from app.deps import SettingsDep
 from app.gguf_scanner import scan
 from app.schemas import ModelInfo
 
@@ -8,5 +8,5 @@ router = APIRouter(prefix="/api/models", tags=["models"])
 
 
 @router.get("", response_model=list[ModelInfo])
-def list_models() -> list[ModelInfo]:
-    return scan(config.MODELS_DIR)
+def list_models(settings: SettingsDep) -> list[ModelInfo]:
+    return scan(settings.models_dir)

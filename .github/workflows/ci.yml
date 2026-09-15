@@ -55,3 +55,41 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+
+  api-types:
+    name: Generated API types up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+
+      # frontend/src/api-types.ts is generated from the backend's OpenAPI
+      # schema and committed. If a pydantic model or route changed without
+      # `npm run gen:api`, the regenerated file differs and this job fails.
+      - name: Regenerate and compare
+        working-directory: frontend
+        run: |
+          npm run gen:api
+          git diff --exit-code -- src/api-types.ts || {
+            echo "::error::frontend/src/api-types.ts is stale. Run 'npm run gen:api' in frontend/ and commit the result."
+            exit 1
+          }
