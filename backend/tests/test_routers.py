@@ -1,4 +1,10 @@
+import dataclasses
+import json
+
+from fastapi.testclient import TestClient
+
 from app import __version__
+from app.main import create_app
 
 
 def test_health_endpoint_reports_version(client):
@@ -66,6 +72,42 @@ def test_presets_crud_roundtrip(client):
 def test_presets_are_persisted_under_data_dir(client, settings):
     client.put("/api/presets/p", json={"name": "p", "model_id": "m1", "flags": {}})
     assert settings.presets_file.exists()
+
+
+def test_saved_preset_reports_updated_at_and_ignores_client_value(client):
+    resp = client.put(
+        "/api/presets/p",
+        json={"name": "p", "model_id": "m1", "flags": {}, "updated_at": 1.0},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["updated_at"] > 1.0
+    assert client.get("/api/presets").json()[0]["updated_at"] == resp.json()["updated_at"]
+
+
+def test_presets_from_a_newer_version_yield_a_clear_error(client, settings):
+    settings.presets_file.write_text(json.dumps({"version": 999, "presets": []}), encoding="utf-8")
+
+    resp = client.get("/api/presets")
+
+    assert resp.status_code == 500
+    assert "999" in resp.json()["detail"]
+    assert "Upgrade LlamaPanel" in resp.json()["detail"]
+
+
+def test_lifespan_adopts_presets_from_legacy_data_dir(tmp_path, settings):
+    legacy_dir = tmp_path / "legacy"
+    legacy_dir.mkdir()
+    (legacy_dir / "presets.json").write_text(
+        json.dumps([{"name": "old", "model_id": "m", "flags": {"ctx_size": 2048}}]), encoding="utf-8"
+    )
+    settings = dataclasses.replace(settings, legacy_data_dirs=(legacy_dir,))
+
+    with TestClient(create_app(settings)) as c:
+        names = [p["name"] for p in c.get("/api/presets").json()]
+
+    assert names == ["old"]
+    assert settings.presets_file.exists()
+    assert (legacy_dir / "presets.json").exists()
 
 
 def test_save_preset_rejects_name_mismatch(client):

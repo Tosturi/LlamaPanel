@@ -11,7 +11,8 @@ Configuration, in order of precedence (highest wins):
     1. CLI flags            python run.py --port 9000
     2. config.ini            copy config.example.ini -> config.ini and edit
     3. environment variables LLAMAPANEL_MODELS_DIR, LLAMAPANEL_SERVER_BIN, ...
-    4. built-in defaults     (models/ and data/ next to this file)
+    4. built-in defaults     (models/ next to this file; state in the
+                              per-user data dir, see app/settings.py)
 
 On first run, this also creates an isolated venv at ./.venv using whatever
 Python launched this script, re-launches itself inside it, and installs
@@ -154,9 +155,9 @@ def main() -> None:
     from app.settings import Settings
 
     # Layer the config: env vars (with legacy aliases) first, then config.ini,
-    # then CLI flags on top. Directory defaults inside Settings are anchored
-    # to this file, not the cwd - otherwise `python /opt/LlamaPanel/run.py`
-    # run from $HOME would create ~/data.
+    # then CLI flags on top. models_dir defaults next to this file, not the
+    # cwd; data_dir defaults to the per-user state directory so presets
+    # survive unpacking a new release into a different folder.
     overrides = {}
     if models_dir := (args.models_dir or file_config.get("models_dir")):
         overrides["models_dir"] = Path(models_dir).resolve()
@@ -174,6 +175,7 @@ def main() -> None:
         )
 
     print(f"LlamaPanel {__version__} starting on http://{host}:{port}", flush=True)
+    print(f"Data dir (presets, llama-server log): {settings.data_dir}", flush=True)
     # Without timeout_graceful_shutdown, Ctrl+C hangs on "Waiting for
     # background tasks to complete" forever: the /api/server/logs websocket
     # (kept open by the UI's LogViewer) only ends when the client disconnects,

@@ -108,6 +108,71 @@ FLAG_SCHEMA: list[FlagDef] = [
 ]
 
 
+# Old preset key -> current key. When a flag is renamed in FLAG_SCHEMA, add
+# the old key here and saved presets keep working without a format bump.
+# Chains (a -> b -> c) are followed.
+FLAG_RENAMES: dict[str, str] = {}
+
+
+def _coerce_value(flag: FlagDef, value):
+    """Best-effort conversion of a stored value to the type FLAG_SCHEMA now
+    declares (a flag that changed from string to number, a boolean saved
+    as "true", ...). Unknown or unconvertible values are returned as-is;
+    None/"" mean "unset" and stay that way."""
+    if value is None or value == "":
+        return value
+    if flag.type == "boolean":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in ("true", "1", "yes", "on"):
+                return True
+            if lowered in ("false", "0", "no", "off"):
+                return False
+        return value
+    if flag.type == "number":
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, (int, float)):
+            return value
+        if isinstance(value, str):
+            text = value.strip()
+            try:
+                return int(text)
+            except ValueError:
+                try:
+                    return float(text)
+                except ValueError:
+                    return value
+        return value
+    # string / enum / path
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    return value
+
+
+def normalize_flags(values: dict) -> dict:
+    """Bring a stored {flag_key: value} dict up to the current schema:
+    apply FLAG_RENAMES and coerce values to the declared types. Keys not in
+    the schema are kept untouched (build_args ignores them), so a preset
+    from a newer LlamaPanel loses nothing on an older one."""
+    schema_by_key = {f.key: f for f in FLAG_SCHEMA}
+    out: dict = {}
+    for key, value in values.items():
+        seen = {key}
+        while key in FLAG_RENAMES and FLAG_RENAMES[key] not in seen:
+            key = FLAG_RENAMES[key]
+            seen.add(key)
+        flag = schema_by_key.get(key)
+        out[key] = _coerce_value(flag, value) if flag is not None else value
+    return out
+
+
 def build_args(model_entry_path: str, values: dict) -> list[str]:
     """Turn {flag_key: value} into a llama-server argv list."""
     args: list[str] = ["--model", model_entry_path]

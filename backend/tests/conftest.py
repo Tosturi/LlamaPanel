@@ -16,6 +16,7 @@ def settings(tmp_path) -> Settings:
         data_dir=tmp_path / "data",
         server_bin="llama-server",
         frontend_dist=tmp_path / "no-dist",
+        legacy_data_dirs=(),
     )
 
 
