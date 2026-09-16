@@ -104,6 +104,7 @@ def test_binary_is_matched_regardless_of_path_extension_and_case(monkeypatch):
 
     assert discovery.find_running_llama_server("llama-server")["pid"] == 7
     assert discovery.find_running_llama_server("D:\\other\\llama-server.exe")["pid"] == 7
+    assert discovery.find_running_llama_server("/opt/llama/bin/llama-server")["pid"] == 7
     assert discovery.find_running_llama_server("llama-cli") is None
 
 

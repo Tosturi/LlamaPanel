@@ -1,4 +1,4 @@
-from pathlib import Path
+import re
 from typing import Optional, TypedDict
 
 import psutil
@@ -27,8 +27,10 @@ def _coerce(flag_type: str, raw: str) -> FlagValue:
 
 def _binary_key(path_or_name: str) -> str:
     """'C:\\llama\\llama-server.exe', 'llama-server.exe' and 'llama-server'
-    all identify the same binary."""
-    return Path(path_or_name).name.lower().removesuffix(".exe")
+    all identify the same binary. Both separators are handled explicitly:
+    pathlib on POSIX treats a backslash as an ordinary character, so a
+    Windows-style server_bin would otherwise never match there."""
+    return re.split(r"[\\/]", path_or_name)[-1].lower().removesuffix(".exe")
 
 
 def find_running_llama_server(server_bin: str) -> Optional[DiscoveredProcess]:
