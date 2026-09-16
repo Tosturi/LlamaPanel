@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
@@ -49,11 +50,16 @@ async def get_status(manager: ManagerDep, settings: SettingsDep) -> StatusRespon
     # If we don't think anything is running, check whether a llama-server is
     # actually alive out there (started manually, or left over from a
     # previous run of this panel) and adopt it so the UI reflects reality.
+    # The process scan and the model-directory scan are blocking I/O, and
+    # the UI polls this endpoint every few seconds - run them off the event
+    # loop so other requests (start, logs websocket) don't stall behind it.
     if manager.state == "stopped":
-        found = discovery.find_running_llama_server(settings.server_bin)
-        if found:
-            model_id = _match_model_id(settings.models_dir, found["model_path"])
-            manager.adopt(pid=found["pid"], model_id=model_id, flags=found["flags"])
+        found = await asyncio.to_thread(discovery.find_running_llama_server, settings.server_bin)
+        # Re-check: a Start may have landed while the scan was running.
+        if found and manager.state == "stopped":
+            model_id = await asyncio.to_thread(_match_model_id, settings.models_dir, found["model_path"])
+            if manager.state == "stopped":
+                manager.adopt(pid=found["pid"], model_id=model_id, flags=found["flags"])
     return await manager.status()
 
 

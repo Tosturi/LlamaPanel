@@ -170,6 +170,70 @@ def test_status_does_not_adopt_when_nothing_is_found(client, monkeypatch):
     assert body["adopted"] is False
 
 
+def test_slow_process_scan_does_not_block_other_requests(client, monkeypatch):
+    """The status poll's process scan is blocking I/O and can take seconds
+    on Windows. It must run off the event loop so a concurrent request is
+    served meanwhile instead of queueing behind it."""
+    import threading
+    import time
+
+    scan_started = threading.Event()
+    release_scan = threading.Event()
+
+    def slow_find(server_bin):
+        scan_started.set()
+        release_scan.wait(5)
+        return None
+
+    monkeypatch.setattr("app.routers.server.discovery.find_running_llama_server", slow_find)
+
+    status_result = {}
+    t = threading.Thread(target=lambda: status_result.update(client.get("/api/server/status").json()))
+    t.start()
+    assert scan_started.wait(5), "status request never reached the scan"
+
+    started = time.perf_counter()
+    health = client.get("/api/health")
+    elapsed = time.perf_counter() - started
+
+    release_scan.set()
+    t.join(5)
+    assert health.status_code == 200
+    assert elapsed < 1.0, f"/api/health waited {elapsed:.2f}s behind the process scan"
+    assert status_result["state"] == "stopped"
+
+
+def test_status_does_not_adopt_if_a_start_landed_during_the_scan(client, settings, monkeypatch):
+    """Discovery found an old process, but by the time it returned the user
+    had started a fresh one from this panel: the fresh one wins."""
+    import threading
+
+    scan_started = threading.Event()
+    release_scan = threading.Event()
+    manager = client.app.state.manager
+
+    def slow_find(server_bin):
+        scan_started.set()
+        release_scan.wait(5)
+        return {"pid": 4242, "model_path": None, "flags": {}}
+
+    monkeypatch.setattr("app.routers.server.discovery.find_running_llama_server", slow_find)
+    monkeypatch.setattr("app.process_manager.psutil.pid_exists", lambda pid: True)
+
+    result = {}
+    t = threading.Thread(target=lambda: result.update(client.get("/api/server/status").json()))
+    t.start()
+    assert scan_started.wait(5)
+    # Simulate a Start that completed while the scan was running.
+    manager._state = "starting"
+    manager._pid = 1
+    release_scan.set()
+    t.join(5)
+
+    assert result["pid"] != 4242
+    assert result["adopted"] is False
+
+
 def test_root_reports_missing_frontend(client):
     resp = client.get("/")
     assert resp.status_code == 503
