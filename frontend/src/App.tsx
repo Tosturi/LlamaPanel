@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { FlagsForm } from "./components/FlagsForm";
 import { LogViewer } from "./components/LogViewer";
@@ -25,6 +25,14 @@ export default function App() {
   const [modelsLoading, setModelsLoading] = useState(true);
   const [actionPending, setActionPending] = useState<"start" | "stop" | "reload" | null>(null);
   const [version, setVersion] = useState<string | null>(null);
+  // Bumped whenever a user action (start/stop/reload/cancel) lands a fresh
+  // status, so a poll that was already in flight can tell it is stale.
+  const statusVersion = useRef(0);
+
+  const applyActionStatus = (s: StatusResponse) => {
+    statusVersion.current += 1;
+    setStatus(s);
+  };
 
   const loadModels = () => {
     setModelsLoading(true);
@@ -42,29 +50,42 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const poll = () => api.getStatus().then(setStatus).catch(() => {});
+    let disposed = false;
+    const poll = () => {
+      const seen = statusVersion.current;
+      api
+        .getStatus()
+        .then((s) => {
+          // While nothing is running, /status scans OS processes to adopt a
+          // stray llama-server, which can take seconds on Windows. A poll
+          // that started before the user hit Start therefore lands *after*
+          // the Start response and carries a stale "stopped" snapshot. Drop
+          // it, or the UI flashes "stopped" and the sync below misfires.
+          if (!disposed && statusVersion.current === seen) setStatus(s);
+        })
+        .catch(() => {});
+    };
     poll();
     const id = setInterval(poll, 5000);
-    return () => clearInterval(id);
+    return () => {
+      disposed = true;
+      clearInterval(id);
+    };
   }, []);
 
   // If a llama-server is already running (started manually, or left over
   // from a previous panel session) pull its model + flags into the form
-  // instead of showing an empty/stale UI. Only re-syncs when the running
-  // pid actually changes, so it won't fight the user editing a new config
-  // while nothing is running.
+  // instead of showing an empty/stale UI. Only syncs the first time a given
+  // pid is seen alive, so it never fights the user editing flags: the pid
+  // of a server started from this UI is marked synced by the Start/Reload
+  // handlers themselves, since the form already holds exactly those flags.
   useEffect(() => {
     if (!status || schema.length === 0) return;
-    if (status.pid === null) {
-      setSyncedPid(null);
-      return;
-    }
     const isLive = status.state === "running" || status.state === "starting";
-    if (isLive && status.pid !== syncedPid) {
-      setSyncedPid(status.pid);
-      if (status.model_id) setSelectedId(status.model_id);
-      setValues({ ...defaultsFromSchema(schema), ...(status.flags ?? {}) });
-    }
+    if (!isLive || status.pid === null || status.pid === syncedPid) return;
+    setSyncedPid(status.pid);
+    if (status.model_id) setSelectedId(status.model_id);
+    setValues({ ...defaultsFromSchema(schema), ...(status.flags ?? {}) });
   }, [status, schema, syncedPid]);
 
   const handleFlagChange = (key: string, value: unknown) => {
@@ -75,13 +96,20 @@ export default function App() {
     if (!selectedId) return;
     setError(null);
     setActionPending("start");
-    api.startServer(selectedId, values).then(setStatus).catch((e) => setError(String(e))).finally(() => setActionPending(null));
+    api
+      .startServer(selectedId, values)
+      .then((s) => {
+        setSyncedPid(s.pid);
+        applyActionStatus(s);
+      })
+      .catch((e) => setError(String(e)))
+      .finally(() => setActionPending(null));
   };
 
   const handleStop = () => {
     setError(null);
     setActionPending("stop");
-    api.stopServer().then(setStatus).catch((e) => setError(String(e))).finally(() => setActionPending(null));
+    api.stopServer().then(applyActionStatus).catch((e) => setError(String(e))).finally(() => setActionPending(null));
   };
 
   const handleReload = () => {
@@ -90,14 +118,17 @@ export default function App() {
     setActionPending("reload");
     api
       .restartServer(selectedId, values)
-      .then((r) => setStatus(r.status))
+      .then((r) => {
+        setSyncedPid(r.status.pid);
+        applyActionStatus(r.status);
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setActionPending(null));
   };
 
   const handleCancelRestart = () => {
     setError(null);
-    api.cancelRestart().then(setStatus).catch((e) => setError(String(e)));
+    api.cancelRestart().then(applyActionStatus).catch((e) => setError(String(e)));
   };
 
   const handleSavePreset = (name: string) => {
