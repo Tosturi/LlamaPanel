@@ -1,4 +1,6 @@
 import asyncio
+import socket
+import sys
 import time
 from collections import deque
 from typing import Optional
@@ -53,6 +55,7 @@ class ProcessManager:
         self._watch_task: Optional[asyncio.Task] = None
         self._pending_restart: Optional[dict] = None
         self._restart_task: Optional[asyncio.Task] = None
+        self._retry_task: Optional[asyncio.Task] = None
 
     @property
     def state(self) -> ServerState:
@@ -130,6 +133,12 @@ class ProcessManager:
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(banner)
             self._emit(banner.strip())
+            # The tailer must pick up from here, not from wherever the file
+            # ends when it first gets to run: a process that dies within its
+            # first milliseconds (bad flag, bind failure, CUDA init error)
+            # has already written its complaint by then, and seeking to the
+            # end would swallow the one line that explains the exit code.
+            tail_from = log_file.stat().st_size
 
             log_fh = open(log_file, "a", encoding="utf-8")
             try:
@@ -145,7 +154,7 @@ class ProcessManager:
             self._pid = self._proc.pid
             self._started_at = time.time()
 
-            self._start_tail(from_start=False)
+            self._start_tail(start_at=tail_from)
             self._watch_task = asyncio.create_task(self._watch_exit(self._proc))
             self._ready_task = asyncio.create_task(self._wait_until_ready(self._proc))
 
@@ -168,14 +177,15 @@ class ProcessManager:
         except Exception as exc:
             self._emit(f"[readiness check failed: {exc}]")
 
-    def _start_tail(self, from_start: bool) -> None:
-        """Replace the log tailer. The previous one must be cancelled
-        explicitly: it only exits on its own when it observes a non-running
-        state, and a restart flips stopped -> starting faster than its
-        0.3s poll, so it would otherwise keep going and every line would be
-        emitted twice (once per tailer)."""
+    def _start_tail(self, start_at: int) -> None:
+        """Replace the log tailer, reading from byte offset `start_at` (0 =
+        the whole file, used when adopting). The previous one must be
+        cancelled explicitly: it only exits on its own when it observes a
+        non-running state, and a restart flips stopped -> starting faster
+        than its 0.3s poll, so it would otherwise keep going and every line
+        would be emitted twice (once per tailer)."""
         self._cancel_tail()
-        self._tail_task = asyncio.create_task(self._tail_log_file(from_start=from_start))
+        self._tail_task = asyncio.create_task(self._tail_log_file(start_at=start_at))
 
     def _cancel_tail(self) -> None:
         self._tail_task = _cancel(self._tail_task)
@@ -194,17 +204,16 @@ class ProcessManager:
         self._started_at = None
         self._state = "running"
         self._emit(f"[adopted already-running llama-server, pid={pid}]")
-        self._start_tail(from_start=True)
+        self._start_tail(start_at=0)
         self._watch_task = asyncio.create_task(self._watch_adopted())
 
-    async def _tail_log_file(self, from_start: bool) -> None:
+    async def _tail_log_file(self, start_at: int) -> None:
         path = self._settings.log_file
         try:
             while not path.exists():
                 await asyncio.sleep(0.2)
             with open(path, "r", encoding="utf-8", errors="replace") as f:
-                if not from_start:
-                    f.seek(0, 2)  # only lines written from now on
+                f.seek(start_at)
                 while True:
                     line = f.readline()
                     if line:
@@ -225,7 +234,7 @@ class ProcessManager:
         self._exit_code = code
         self._state = "stopped" if self._stop_requested else "crashed"
         if not self._stop_requested:
-            self._emit(f"[process exited unexpectedly with code {code}]")
+            self._emit(f"[process exited unexpectedly with code {code}; full output: {self._settings.log_file}]")
 
     async def _watch_adopted(self) -> None:
         while self._adopted and self._state == "running":
@@ -243,6 +252,7 @@ class ProcessManager:
             self._stop_requested = True
             self._cancel_tail()
             self._ready_task = _cancel(self._ready_task)
+            self._retry_task = _cancel(self._retry_task)
 
             if self._adopted:
                 await asyncio.to_thread(_terminate_pid, self._pid, timeout)
@@ -273,8 +283,7 @@ class ProcessManager:
 
         if self._state != "running" or await self.is_busy() is not True:
             self._pending_restart = None
-            await self.stop()
-            await self.start(**pending)
+            await self._stop_and_start(pending)
             return "applied"
 
         self._pending_restart = pending
@@ -294,8 +303,7 @@ class ProcessManager:
                     pending = self._pending_restart
                     self._pending_restart = None
                     self._emit("[inference finished - reloading with the new settings]")
-                    await self.stop()
-                    await self.start(**pending)
+                    await self._stop_and_start(pending)
                     return
                 await asyncio.sleep(2.0)
         except asyncio.CancelledError:
@@ -304,13 +312,87 @@ class ProcessManager:
             self._pending_restart = None
             self._emit(f"[reload-when-idle failed: {exc}]")
 
+    # --- restart robustness --------------------------------------------------
+    #
+    # Killing llama-server and spawning its successor a few milliseconds
+    # later is racy on two fronts: the OS may still be tearing down the old
+    # listening socket, and the CUDA driver returns VRAM asynchronously after
+    # a process dies. The first is cheap to check for, the second cannot be
+    # observed from here - so the port is waited on explicitly, and an early
+    # death of the new process (within EARLY_EXIT_WINDOW seconds, i.e. during
+    # model load, not a crash hours later) earns exactly one delayed retry.
+
+    PORT_WAIT_TIMEOUT = 5.0
+    PORT_POLL_INTERVAL = 0.1
+    EARLY_EXIT_WINDOW = 10.0
+    RETRY_DELAY = 2.0
+
+    async def _stop_and_start(self, pending: dict) -> None:
+        await self.stop()
+        self._retry_task = _cancel(self._retry_task)
+        await self._wait_for_port(pending["flags"])
+        await self.start(**pending)
+        self._retry_task = asyncio.create_task(self._retry_if_dies_early(pending, self._proc))
+
+    async def _wait_for_port(self, flags: dict[str, FlagValue]) -> bool:
+        """Block until llama-server's host:port can be bound, or give up after
+        PORT_WAIT_TIMEOUT and let the start proceed anyway (llama-server then
+        reports the real error itself). Returns whether the port was free."""
+        host = str(flags.get("host") or "127.0.0.1")
+        port = int(flags.get("port") or 8080)
+        deadline = time.monotonic() + self.PORT_WAIT_TIMEOUT
+        waited = False
+        while True:
+            if await asyncio.to_thread(_port_is_free, host, port):
+                if waited:
+                    self._emit(f"[port {port} is free again]")
+                return True
+            if time.monotonic() >= deadline:
+                self._emit(f"[port {port} still busy after {self.PORT_WAIT_TIMEOUT:g}s - starting anyway]")
+                return False
+            if not waited:
+                waited = True
+                self._emit(f"[waiting for port {port} to be released by the previous process]")
+            await asyncio.sleep(self.PORT_POLL_INTERVAL)
+
+    async def _retry_if_dies_early(self, pending: dict, proc: Optional[asyncio.subprocess.Process]) -> None:
+        """If the process just started by a restart exits on its own within
+        EARLY_EXIT_WINDOW seconds, start it once more after RETRY_DELAY. A
+        second failure is left alone - that's a real error, not a race."""
+        if proc is None:
+            return
+        try:
+            try:
+                await asyncio.wait_for(asyncio.shield(proc.wait()), timeout=self.EARLY_EXIT_WINDOW)
+            except asyncio.TimeoutError:
+                return  # survived the window; nothing to do
+            # Give _watch_exit (which was awaiting the same exit) a tick to
+            # record the outcome before we look at it.
+            await asyncio.sleep(0)
+            if self._proc is not proc or self._state != "crashed":
+                return  # stopped on purpose, or superseded by another start
+            code = proc.returncode
+            self._emit(
+                f"[llama-server exited with code {code} right after the restart - "
+                f"retrying once in {self.RETRY_DELAY:g}s in case the previous process was still releasing resources]"
+            )
+            await asyncio.sleep(self.RETRY_DELAY)
+            if self._state != "crashed":
+                return  # the user started or stopped something meanwhile
+            await self._wait_for_port(pending["flags"])
+            await self.start(**pending)
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            self._emit(f"[restart retry failed: {exc}]")
+
     async def shutdown(self) -> None:
         """Panel is exiting. Deliberately leaves llama-server running: it's
         an independent long-lived process, and the next panel instance will
         adopt it via discovery. Only our own bookkeeping tasks are torn
         down so the event loop can close cleanly."""
         self._pending_restart = None
-        for attr in ("_restart_task", "_ready_task", "_tail_task", "_watch_task"):
+        for attr in ("_restart_task", "_retry_task", "_ready_task", "_tail_task", "_watch_task"):
             setattr(self, attr, _cancel(getattr(self, attr)))
         # Give the cancelled tasks a tick to actually finish.
         await asyncio.sleep(0)
@@ -322,6 +404,22 @@ def _cancel(task: Optional[asyncio.Task]) -> None:
     if task is not None and not task.done():
         task.cancel()
     return None
+
+
+def _port_is_free(host: str, port: int) -> bool:
+    """Whether a TCP listener could bind host:port right now. Mirrors what
+    llama-server itself does: on POSIX it binds with SO_REUSEADDR (so
+    lingering TIME_WAIT connections don't count), on Windows without it
+    (there SO_REUSEADDR would let us bind *over* a live listener and lie)."""
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    try:
+        with socket.socket(family, socket.SOCK_STREAM) as s:
+            if sys.platform != "win32":
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((host, port))
+            return True
+    except OSError:
+        return False
 
 
 def _terminate_pid(pid: Optional[int], timeout: float) -> None:
