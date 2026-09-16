@@ -68,7 +68,6 @@ def ensure_venv_and_reexec() -> None:
 def ensure_dependencies() -> None:
     try:
         import fastapi  # noqa: F401
-        import gguf  # noqa: F401
         import httpx  # noqa: F401
         import psutil  # noqa: F401
         import uvicorn  # noqa: F401
@@ -77,14 +76,6 @@ def ensure_dependencies() -> None:
         subprocess.check_call([
             sys.executable, "-m", "pip", "install",
             "-r", str(BACKEND / "requirements.txt"),
-        ])
-        # gguf pulls in sentencepiece transitively, which has no prebuilt
-        # wheel for newer Python versions and fails building from source.
-        # We only use gguf.GGUFReader for header metadata, which needs
-        # nothing beyond numpy/pyyaml/tqdm (installed above) - so install it
-        # with --no-deps to skip that unused, build-fragile dependency.
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install", "--no-deps", "gguf>=0.13",
         ])
 
 

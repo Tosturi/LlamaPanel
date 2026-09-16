@@ -1,6 +1,8 @@
 import re
+import struct
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import BinaryIO
 
 from app.schemas import ModelInfo, ModelPart
 
@@ -20,10 +22,10 @@ FILE_TYPE_NAMES = {
 }
 
 
-# Reading a GGUF header (via gguf.GGUFReader) is the expensive part of a scan -
-# it's what makes /api/models and the periodic /api/server/status poll slow on
-# large model directories. Cache by (path, mtime) so an unchanged file is only
-# parsed once per process lifetime instead of on every request.
+# Reading a GGUF header is the expensive part of a scan - it's what makes
+# /api/models and the periodic /api/server/status poll slow on large model
+# directories. Cache by (path, mtime) so an unchanged file is only parsed
+# once per process lifetime instead of on every request.
 _metadata_cache: dict[str, tuple[float, dict]] = {}
 
 
@@ -36,46 +38,157 @@ def _read_gguf_metadata_cached(path: Path, mtime: float) -> dict:
     return meta
 
 
+# --- GGUF header parsing -------------------------------------------------
+#
+# The panel needs four values out of a model file: architecture, name,
+# quantisation type and context length. The official `gguf` reader was
+# built for converters, so it materialises *every* key/value pair - including
+# the tokenizer's vocabulary, merges and scores, hundreds of thousands of
+# entries each - as numpy views, and then walks the whole tensor-info table.
+# On a 9B model that is seconds per file, all of it thrown away. This parser
+# walks the KV section sequentially, skips values it does not care about
+# without decoding them, and stops as soon as the four keys are in hand -
+# which in practice is after the first dozen entries, long before the
+# tokenizer block. Format reference: ggml/docs/gguf.md.
+
+GGUF_MAGIC = b"GGUF"
+GGUF_SUPPORTED_VERSIONS = (2, 3)
+
+# gguf_metadata_value_type -> (struct format, byte size)
+_T_UINT8, _T_INT8, _T_UINT16, _T_INT16, _T_UINT32, _T_INT32 = 0, 1, 2, 3, 4, 5
+_T_FLOAT32, _T_BOOL, _T_STRING, _T_ARRAY, _T_UINT64, _T_INT64, _T_FLOAT64 = 6, 7, 8, 9, 10, 11, 12
+_SCALAR_TYPES: dict[int, tuple[str, int]] = {
+    _T_UINT8: ("B", 1), _T_INT8: ("b", 1), _T_UINT16: ("H", 2), _T_INT16: ("h", 2),
+    _T_UINT32: ("I", 4), _T_INT32: ("i", 4), _T_FLOAT32: ("f", 4), _T_BOOL: ("?", 1),
+    _T_UINT64: ("Q", 8), _T_INT64: ("q", 8), _T_FLOAT64: ("d", 8),
+}
+
+_GENERAL_KEYS = ("general.architecture", "general.name", "general.file_type")
+_WANTED_COUNT = len(_GENERAL_KEYS) + 1  # + "<arch>.context_length"
+
+
+class _HeaderReader:
+    """Sequential little-endian reader over a file with a refillable buffer,
+    so the thousands of tiny reads a KV walk needs don't each hit the OS."""
+
+    def __init__(self, f: BinaryIO, chunk_size: int = 1 << 20) -> None:
+        self._f = f
+        self._chunk_size = chunk_size
+        self._buf = b""
+        self._pos = 0
+
+    def take(self, n: int) -> bytes:
+        if self._pos + n > len(self._buf):
+            self._buf = self._buf[self._pos:] + self._f.read(max(self._chunk_size, n))
+            self._pos = 0
+            if len(self._buf) < n:
+                raise EOFError("truncated GGUF header")
+        chunk = self._buf[self._pos:self._pos + n]
+        self._pos += n
+        return chunk
+
+    def skip(self, n: int) -> None:
+        buffered = len(self._buf) - self._pos
+        if n <= buffered:
+            self._pos += n
+        else:
+            # Past the end of the buffer: seek instead of reading and discarding.
+            self._f.seek(n - buffered, 1)
+            self._buf = b""
+            self._pos = 0
+
+    def u32(self) -> int:
+        return struct.unpack("<I", self.take(4))[0]
+
+    def u64(self) -> int:
+        return struct.unpack("<Q", self.take(8))[0]
+
+    def string(self) -> str:
+        return self.take(self.u64()).decode("utf-8", errors="ignore")
+
+    def skip_string(self) -> None:
+        self.skip(self.u64())
+
+
+def _read_wanted_kv(f: BinaryIO) -> dict:
+    """Walk the KV section and return the raw values of the keys the panel
+    uses. Anything else is skipped byte-wise without being decoded."""
+    r = _HeaderReader(f)
+    if r.take(4) != GGUF_MAGIC:
+        raise ValueError("not a GGUF file")
+    version = r.u32()
+    if version not in GGUF_SUPPORTED_VERSIONS:
+        raise ValueError(f"unsupported GGUF version {version}")
+    r.u64()  # tensor count - the tensor-info table is never read
+    kv_count = r.u64()
+
+    found: dict = {}
+    ctx_key: str | None = None
+    for _ in range(kv_count):
+        key = r.string()
+        value_type = r.u32()
+        wanted = key in _GENERAL_KEYS or key == ctx_key
+
+        if value_type == _T_STRING:
+            if wanted:
+                found[key] = r.string()
+            else:
+                r.skip_string()
+        elif value_type == _T_ARRAY:
+            # Arrays (vocab, merges, scores, ...) are never wanted; skip them
+            # as cheaply as the element type allows.
+            elem_type = r.u32()
+            count = r.u64()
+            if elem_type == _T_STRING:
+                for _ in range(count):
+                    r.skip_string()
+            elif elem_type in _SCALAR_TYPES:
+                r.skip(_SCALAR_TYPES[elem_type][1] * count)
+            else:
+                raise ValueError(f"unknown GGUF array element type {elem_type}")
+        elif value_type in _SCALAR_TYPES:
+            fmt, size = _SCALAR_TYPES[value_type]
+            raw = r.take(size)
+            if wanted:
+                found[key] = struct.unpack("<" + fmt, raw)[0]
+        else:
+            raise ValueError(f"unknown GGUF value type {value_type}")
+
+        if key == "general.architecture" and isinstance(found.get(key), str):
+            ctx_key = f"{found[key]}.context_length"
+        if len(found) == _WANTED_COUNT:
+            break  # everything we need is in hand; don't walk the tokenizer
+    return found
+
+
 def _read_gguf_metadata(path: Path) -> dict:
-    """Read only the GGUF header/metadata (no tensor data)."""
+    """Read only the GGUF header/metadata the panel displays (no tensor data)."""
     try:
-        import gguf  # local import: optional dep, keep scanner usable without it in tests
-
-        reader = gguf.GGUFReader(str(path))
-        fields = reader.fields
-
-        def get_str(key: str) -> str | None:
-            f = fields.get(key)
-            if f is None or not f.parts:
-                return None
-            try:
-                return bytes(f.parts[f.data[-1]]).decode("utf-8", errors="ignore")
-            except Exception:
-                return None
-
-        def get_int(key: str) -> int | None:
-            f = fields.get(key)
-            if f is None or not f.parts:
-                return None
-            try:
-                return int(f.parts[f.data[-1]][0])
-            except Exception:
-                return None
-
-        arch = get_str("general.architecture")
-        file_type_raw = get_int("general.file_type")
-        ctx_len = get_int(f"{arch}.context_length") if arch else None
-        name = get_str("general.name")
-
-        return {
-            "architecture": arch,
-            "file_type": FILE_TYPE_NAMES.get(file_type_raw, str(file_type_raw) if file_type_raw is not None else None),
-            "context_length": ctx_len,
-            "name": name,
-        }
+        with open(path, "rb") as f:
+            raw = _read_wanted_kv(f)
     except Exception:
-        # Corrupt file, unsupported version, or `gguf` not installed - degrade gracefully.
+        # Corrupt/truncated file, unsupported version, unreadable - degrade gracefully.
         return {}
+
+    arch = raw.get("general.architecture")
+    if not isinstance(arch, str):
+        arch = None
+    name = raw.get("general.name")
+    if not isinstance(name, str):
+        name = None
+    file_type_raw = raw.get("general.file_type")
+    if isinstance(file_type_raw, bool) or not isinstance(file_type_raw, int):
+        file_type_raw = None
+    ctx_len = raw.get(f"{arch}.context_length") if arch else None
+    if isinstance(ctx_len, bool) or not isinstance(ctx_len, int):
+        ctx_len = None
+
+    return {
+        "architecture": arch,
+        "file_type": FILE_TYPE_NAMES.get(file_type_raw, str(file_type_raw) if file_type_raw is not None else None),
+        "context_length": ctx_len,
+        "name": name,
+    }
 
 
 def scan(directory: Path) -> list[ModelInfo]:
@@ -97,10 +210,9 @@ def scan(directory: Path) -> list[ModelInfo]:
     for parts in groups.values():
         parts.sort(key=lambda t: t[0])
 
-    # Reading one file's GGUF header - opening it plus parsing its full tensor
-    # info table - is I/O-bound and, on a directory with several sizeable
-    # models, dominates scan time if done one file at a time. Fan the reads
-    # out across threads so they overlap instead of queueing up.
+    # Header reads are I/O-bound (each one is an open + a few reads, and on a
+    # cold cache the first read of a huge file can stall on the disk). Fan
+    # them out across threads so they overlap instead of queueing up.
     entry_paths = [parts[0][1] for parts in groups.values()] + singles
     with ThreadPoolExecutor(max_workers=min(8, len(entry_paths)) or 1) as pool:
         metas = list(pool.map(lambda p: _read_gguf_metadata_cached(p, p.stat().st_mtime), entry_paths))
