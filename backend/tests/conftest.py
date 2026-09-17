@@ -20,6 +20,15 @@ def settings(tmp_path) -> Settings:
     )
 
 
+@pytest.fixture(autouse=True)
+def no_real_binary(monkeypatch):
+    """Never probe a llama-server that happens to be installed on the dev
+    machine: the flag schema then always comes from the bundled snapshot,
+    so tests are deterministic. Tests that exercise probing patch
+    resolve_binary/_run themselves on top of this."""
+    monkeypatch.setattr("app.introspection.resolve_binary", lambda server_bin: None)
+
+
 @pytest.fixture
 def client(settings):
     """TestClient with the lifespan running, i.e. app.state populated the

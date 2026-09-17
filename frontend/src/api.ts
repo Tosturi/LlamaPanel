@@ -59,7 +59,8 @@ export const api = {
   listPresets: () => fetch(`${BASE}/api/presets`).then((r) => json<Preset[]>(r)),
 
   savePreset: (name: string, modelId: string, flags: FlagValues) => {
-    const body: Preset = { name, model_id: modelId, flags };
+    // `unsupported` is computed by the server on read and ignored on input.
+    const body: Preset = { name, model_id: modelId, flags, unsupported: [] };
     return fetch(`${BASE}/api/presets/${encodeURIComponent(name)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
