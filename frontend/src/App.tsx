@@ -13,6 +13,17 @@ function defaultsFromSchema(schema: FlagDef[]): FlagValues {
   return values;
 }
 
+/** "llama.cpp 0.4.1-dev (build 11026, b49650adb)" for current builds,
+ *  "llama.cpp build 6789 (a1b2c3d)" for ones that predate release versions. */
+function describeBuild(binary: BinaryInfo): string {
+  const details = [
+    binary.version !== null && binary.build !== null ? `build ${binary.build}` : null,
+    binary.commit,
+  ].filter(Boolean);
+  const head = binary.version ?? `build ${binary.build ?? "?"}`;
+  return `llama.cpp ${head}${details.length ? ` (${details.join(", ")})` : ""}`;
+}
+
 export default function App() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loras, setLoras] = useState<LoraInfo[]>([]);
@@ -168,8 +179,7 @@ export default function App() {
     }
     return (
       <div className="muted binary-info" title={binary.resolved_path ?? undefined}>
-        llama.cpp build {binary.build ?? "?"}
-        {binary.commit && ` (${binary.commit})`} · {schema.length} flags
+        {describeBuild(binary)} · {schema.length} flags
       </div>
     );
   })();

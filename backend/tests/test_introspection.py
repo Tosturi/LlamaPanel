@@ -332,12 +332,17 @@ def test_help_is_reflowed_for_display(args_by_key):
 # --- version -----------------------------------------------------------------
 
 def test_parse_version_reads_build_and_commit():
-    assert parse_version("version: 6789 (a1b2c3d)\nbuilt with MSVC 19.44 for x64\n") == (6789, "a1b2c3d")
+    assert parse_version("version: 6789 (a1b2c3d)\nbuilt with MSVC 19.44 for x64\n") == (None, 6789, "a1b2c3d")
+
+
+def test_parse_version_reads_the_release_version_format():
+    text = "version: 0.4.1-dev (build 11026, commit b49650adb)\nbuilt with Clang 20.1.8 for Windows x86_64\n"
+    assert parse_version(text) == ("0.4.1-dev", 11026, "b49650adb")
 
 
 def test_parse_version_handles_unknown_commit_and_garbage():
-    assert parse_version("version: 0 (unknown)") == (0, "unknown")
-    assert parse_version("something else entirely") == (None, None)
+    assert parse_version("version: 0 (unknown)") == (None, 0, "unknown")
+    assert parse_version("something else entirely") == (None, None, None)
 
 
 # --- binary resolution and probing ------------------------------------------

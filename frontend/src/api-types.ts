@@ -250,6 +250,8 @@ export interface components {
             resolved_path: string | null;
             /** Server Bin */
             server_bin: string;
+            /** Version */
+            version: string | null;
         };
         /** DeletedResponse */
         DeletedResponse: {

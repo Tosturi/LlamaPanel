@@ -91,6 +91,7 @@ class BinaryInfo(ResponseModel):
 
     server_bin: str
     resolved_path: Optional[str] = None
+    version: Optional[str] = None  # release version, e.g. "0.4.1-dev"; None for older builds
     build: Optional[int] = None  # llama.cpp build number, e.g. 6789
     commit: Optional[str] = None
     args: list[LlamaArg] = []

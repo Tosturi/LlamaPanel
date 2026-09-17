@@ -75,8 +75,10 @@ header h1 .version { font-size: 0.75rem; font-weight: normal; margin-left: 0.5re
 .help-tip-icon:hover, .help-tip-icon:focus { color: #e6e6e6; border-color: #6b7a99; outline: none; }
 .help-tip-body { display: none; position: absolute; right: 0; top: 1.6rem; z-index: 20; width: max-content; max-width: 22rem; background: #1f2430; border: 1px solid #3a4050; border-radius: 6px; padding: 0.6rem 0.75rem; font-size: 0.8rem; line-height: 1.4; color: #e6e6e6; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); white-space: pre-line; text-transform: none; text-align: left; }
 .help-tip:hover .help-tip-body, .help-tip:focus-within .help-tip-body { display: flex; flex-direction: column; gap: 0.4rem; }
-.help-tip-cli { color: #9cf; font-size: 0.75rem; white-space: normal; word-break: break-word; }
-.help-tip-text { word-break: break-word; }
+/* Flex children don't shrink below their longest word unless told to, so
+   an unbroken token (URL, a,b,c list, path) would poke out of the box. */
+.help-tip-body > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.help-tip-cli { color: #9cf; font-size: 0.75rem; white-space: normal; }
 .help-tip-meta { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; color: #9aa; font-size: 0.75rem; }
 .help-tip-meta code { color: #cfe0ff; }
 
