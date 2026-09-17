@@ -4,6 +4,7 @@ import type {
   FlagDef,
   FlagValues,
   HealthResponse,
+  LoraInfo,
   ModelInfo,
   Preset,
   RestartResponse,
@@ -38,6 +39,8 @@ export const api = {
   getHealth: () => fetch(`${BASE}/api/health`).then((r) => json<HealthResponse>(r)),
 
   listModels: () => fetch(`${BASE}/api/models`).then((r) => json<ModelInfo[]>(r)),
+
+  listLoras: () => fetch(`${BASE}/api/loras`).then((r) => json<LoraInfo[]>(r)),
 
   getFlagSchema: () => fetch(`${BASE}/api/server/flags`).then((r) => json<FlagDef[]>(r)),
 

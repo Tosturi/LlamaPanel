@@ -199,6 +199,20 @@ def test_build_args_skips_values_equal_to_the_documented_default(schema):
     assert args[2:] == ["--port", "8081"]
 
 
+def test_build_args_lora_picker_values_round_trip(schema):
+    # What the UI's LoRA picker writes: one --lora per plain adapter, the
+    # scaled ones as path:scale (Windows drive colons are fine, llama.cpp
+    # splits on the last colon).
+    values = {"lora": ["C:\\m\\a.gguf", "C:\\m\\loras\\b.gguf"], "lora_scaled": ["C:\\m\\c.gguf:0.6"]}
+    args = build_args("C:\\m\\model.gguf", values, schema)
+    assert args[2:] == [
+        "--lora", "C:\\m\\a.gguf", "--lora", "C:\\m\\loras\\b.gguf",
+        "--lora-scaled", "C:\\m\\c.gguf:0.6",
+    ]
+    _, flags = parse_args(["llama-server", *args], schema)
+    assert flags == {"lora": ["C:\\m\\a.gguf", "C:\\m\\loras\\b.gguf"], "lora_scaled": "C:\\m\\c.gguf:0.6"}
+
+
 def test_build_args_ignores_unknown_keys(schema):
     args = build_args("/m.gguf", {"totally_unknown_flag": "x"}, schema)
     assert args == ["--model", "/m.gguf"]

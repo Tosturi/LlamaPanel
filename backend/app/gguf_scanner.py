@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import BinaryIO
 
-from app.schemas import ModelInfo, ModelPart
+from app.schemas import LoraInfo, ModelInfo, ModelPart
 
 # llama.cpp split naming convention: "<name>-00001-of-00005.gguf"
 SPLIT_RE = re.compile(r"^(?P<base>.+)-(?P<part>\d{5})-of-(?P<total>\d{5})\.gguf$", re.IGNORECASE)
@@ -63,8 +63,18 @@ _SCALAR_TYPES: dict[int, tuple[str, int]] = {
     _T_UINT64: ("Q", 8), _T_INT64: ("q", 8), _T_FLOAT64: ("d", 8),
 }
 
+# The keys that decide when to stop walking: a model header always carries
+# these (plus "<arch>.context_length"), and they all sit in the general /
+# hparams block before the tokenizer.
 _GENERAL_KEYS = ("general.architecture", "general.name", "general.file_type")
 _WANTED_COUNT = len(_GENERAL_KEYS) + 1  # + "<arch>.context_length"
+# Picked up when seen, but never waited for: written by the converter right
+# after general.architecture, so they're in hand long before the early exit.
+# general.type is "adapter" for LoRA files (convert_lora_to_gguf.py), which
+# also record the base model under general.base_model.0.*.
+_OPTIONAL_KEYS = ("general.type", "general.base_model.0.name", "adapter.type")
+
+ADAPTER_SUBDIR = "loras"
 
 
 class _HeaderReader:
@@ -123,15 +133,18 @@ def _read_wanted_kv(f: BinaryIO) -> dict:
     kv_count = r.u64()
 
     found: dict = {}
+    optional: dict = {}
     ctx_key: str | None = None
     for _ in range(kv_count):
         key = r.string()
         value_type = r.u32()
-        wanted = key in _GENERAL_KEYS or key == ctx_key
+        is_optional = key in _OPTIONAL_KEYS
+        wanted = is_optional or key in _GENERAL_KEYS or key == ctx_key
+        target = optional if is_optional else found
 
         if value_type == _T_STRING:
             if wanted:
-                found[key] = r.string()
+                target[key] = r.string()
             else:
                 r.skip_string()
         elif value_type == _T_ARRAY:
@@ -150,7 +163,7 @@ def _read_wanted_kv(f: BinaryIO) -> dict:
             fmt, size = _SCALAR_TYPES[value_type]
             raw = r.take(size)
             if wanted:
-                found[key] = struct.unpack("<" + fmt, raw)[0]
+                target[key] = struct.unpack("<" + fmt, raw)[0]
         else:
             raise ValueError(f"unknown GGUF value type {value_type}")
 
@@ -158,7 +171,7 @@ def _read_wanted_kv(f: BinaryIO) -> dict:
             ctx_key = f"{found[key]}.context_length"
         if len(found) == _WANTED_COUNT:
             break  # everything we need is in hand; don't walk the tokenizer
-    return found
+    return {**optional, **found}
 
 
 def _read_gguf_metadata(path: Path) -> dict:
@@ -182,16 +195,36 @@ def _read_gguf_metadata(path: Path) -> dict:
     ctx_len = raw.get(f"{arch}.context_length") if arch else None
     if isinstance(ctx_len, bool) or not isinstance(ctx_len, int):
         ctx_len = None
+    kind = raw.get("general.type")
+    base_model = raw.get("general.base_model.0.name")
 
     return {
         "architecture": arch,
         "file_type": FILE_TYPE_NAMES.get(file_type_raw, str(file_type_raw) if file_type_raw is not None else None),
         "context_length": ctx_len,
         "name": name,
+        # "model" / "adapter" / None for GGUFs older than the general.type key
+        "type": kind if isinstance(kind, str) else None,
+        "base_model": base_model if isinstance(base_model, str) else None,
     }
 
 
+def _is_adapter(meta: dict) -> bool:
+    return meta.get("type") == "adapter"
+
+
+def _read_all(paths: list[Path]) -> dict[Path, dict]:
+    # Header reads are I/O-bound (each one is an open + a few reads, and on a
+    # cold cache the first read of a huge file can stall on the disk). Fan
+    # them out across threads so they overlap instead of queueing up.
+    with ThreadPoolExecutor(max_workers=min(8, len(paths)) or 1) as pool:
+        metas = list(pool.map(lambda p: _read_gguf_metadata_cached(p, p.stat().st_mtime), paths))
+    return dict(zip(paths, metas))
+
+
 def scan(directory: Path) -> list[ModelInfo]:
+    """Models in `directory` (top level only). LoRA adapters that live next
+    to them are left out - see scan_loras()."""
     if not directory.exists():
         return []
 
@@ -210,19 +243,16 @@ def scan(directory: Path) -> list[ModelInfo]:
     for parts in groups.values():
         parts.sort(key=lambda t: t[0])
 
-    # Header reads are I/O-bound (each one is an open + a few reads, and on a
-    # cold cache the first read of a huge file can stall on the disk). Fan
-    # them out across threads so they overlap instead of queueing up.
     entry_paths = [parts[0][1] for parts in groups.values()] + singles
-    with ThreadPoolExecutor(max_workers=min(8, len(entry_paths)) or 1) as pool:
-        metas = list(pool.map(lambda p: _read_gguf_metadata_cached(p, p.stat().st_mtime), entry_paths))
-    meta_by_path = dict(zip(entry_paths, metas))
+    meta_by_path = _read_all(entry_paths)
 
     models: list[ModelInfo] = []
 
     for base, parts in groups.items():
         entry_path = parts[0][1]
         meta = meta_by_path[entry_path]
+        if _is_adapter(meta):
+            continue
         model_parts = [
             ModelPart(filename=p.name, path=str(p), size_bytes=p.stat().st_size)
             for _, p in parts
@@ -241,6 +271,8 @@ def scan(directory: Path) -> list[ModelInfo]:
 
     for path in singles:
         meta = meta_by_path[path]
+        if _is_adapter(meta):
+            continue
         size = path.stat().st_size
         models.append(ModelInfo(
             id=path.stem,
@@ -255,3 +287,39 @@ def scan(directory: Path) -> list[ModelInfo]:
         ))
 
     return sorted(models, key=lambda m: m.display_name.lower())
+
+
+def scan_loras(directory: Path) -> list[LoraInfo]:
+    """LoRA adapters: any GGUF in `directory` whose header says
+    general.type == "adapter", plus every GGUF in `directory`/loras (the
+    header check is skipped there, so adapters converted before the type
+    key existed still show up when the user files them in that folder)."""
+    if not directory.exists():
+        return []
+
+    candidates: list[tuple[Path, bool]] = [(p, True) for p in sorted(directory.glob("*.gguf"))]
+    sub = directory / ADAPTER_SUBDIR
+    if sub.is_dir():
+        candidates += [(p, False) for p in sorted(sub.glob("*.gguf"))]
+    if not candidates:
+        return []
+
+    meta_by_path = _read_all([p for p, _ in candidates])
+    loras: list[LoraInfo] = []
+    for path, require_type in candidates:
+        meta = meta_by_path[path]
+        if require_type and not _is_adapter(meta):
+            continue
+        rel = path.relative_to(directory)
+        loras.append(LoraInfo(
+            id=rel.with_suffix("").as_posix(),
+            # The converter copies the *base model's* general.name into the
+            # adapter, so the file name is the only thing that names the
+            # adapter itself.
+            display_name=path.stem,
+            path=str(path),
+            size_bytes=path.stat().st_size,
+            architecture=meta.get("architecture"),
+            base_model=meta.get("base_model") or meta.get("name"),
+        ))
+    return sorted(loras, key=lambda l: l.display_name.lower())

@@ -69,7 +69,34 @@ def test_reads_the_four_displayed_fields_from_a_realistic_header(tmp_path):
         "name": "Qwen3 9B",
         "file_type": "Q5_K_M",
         "context_length": 40960,
+        "type": "model",
+        "base_model": None,
     }
+
+
+# What convert_lora_to_gguf.py writes: the base model's general.* block,
+# general.type = adapter, the adapter.* keys and no tokenizer.
+LORA = [
+    ("general.architecture", "qwen3"),
+    ("general.type", "adapter"),
+    ("general.name", "Qwen3 9B"),
+    ("general.base_model.count", 1),
+    ("general.base_model.0.name", "Qwen3-9B-Instruct"),
+    ("general.file_type", 1),
+    ("adapter.type", "lora"),
+    ("adapter.lora.alpha", 16.0),
+    ("qwen3.context_length", 40960),
+]
+
+
+def test_reads_adapter_type_and_base_model(tmp_path):
+    f = tmp_path / "a.gguf"
+    f.write_bytes(_gguf(LORA))
+
+    meta = scanner._read_gguf_metadata(f)
+    assert meta["type"] == "adapter"
+    assert meta["base_model"] == "Qwen3-9B-Instruct"
+    assert meta["architecture"] == "qwen3"
 
 
 def test_stops_reading_once_the_wanted_keys_are_found(tmp_path):
@@ -155,6 +182,42 @@ def test_scan_uses_the_parsed_header(tmp_path):
     assert models[0].architecture == "qwen3"
     assert models[0].file_type == "Q5_K_M"
     assert models[0].context_length == 40960
+
+
+def test_scan_leaves_adapters_out_of_the_model_list(tmp_path):
+    (tmp_path / "model.gguf").write_bytes(_gguf(REALISTIC))
+    (tmp_path / "my-adapter.gguf").write_bytes(_gguf(LORA))
+
+    assert [m.id for m in scanner.scan(tmp_path)] == ["model"]
+
+
+def test_scan_loras_finds_typed_adapters_and_everything_in_the_loras_folder(tmp_path):
+    (tmp_path / "model.gguf").write_bytes(_gguf(REALISTIC))
+    (tmp_path / "zeta-adapter.gguf").write_bytes(_gguf(LORA))
+    sub = tmp_path / "loras"
+    sub.mkdir()
+    # No general.type at all (old converter): trusted because of its folder.
+    (sub / "Alpha.gguf").write_bytes(_gguf([("general.architecture", "llama"), ("general.name", "Llama 3")]))
+    (sub / "not-gguf.txt").write_bytes(b"x")
+
+    loras = scanner.scan_loras(tmp_path)
+
+    assert [l.id for l in loras] == ["loras/Alpha", "zeta-adapter"]
+    alpha, zeta = loras
+    assert alpha.display_name == "Alpha"
+    assert alpha.architecture == "llama"
+    assert alpha.base_model == "Llama 3"  # falls back to general.name
+    assert alpha.path == str(sub / "Alpha.gguf")
+    assert zeta.display_name == "zeta-adapter"  # never the base model's general.name
+    assert zeta.base_model == "Qwen3-9B-Instruct"
+    assert zeta.size_bytes == (tmp_path / "zeta-adapter.gguf").stat().st_size
+
+
+def test_scan_loras_handles_missing_and_empty_directories(tmp_path):
+    assert scanner.scan_loras(tmp_path / "nope") == []
+    assert scanner.scan_loras(tmp_path) == []
+    (tmp_path / "model.gguf").write_bytes(_gguf(REALISTIC))
+    assert scanner.scan_loras(tmp_path) == []
 
 
 def test_scan_missing_directory_returns_empty_list(tmp_path):

@@ -45,6 +45,18 @@ def test_models_endpoint_empty_when_directory_missing(client, settings):
     assert resp.json() == []
 
 
+def test_loras_endpoint_lists_adapters_from_the_loras_folder(client, settings):
+    (settings.models_dir / "loras").mkdir(parents=True)
+    (settings.models_dir / "loras" / "style.gguf").write_bytes(b"")
+
+    resp = client.get("/api/loras")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [l["id"] for l in body] == ["loras/style"]
+    assert body[0]["path"].endswith("style.gguf")
+
+
 def test_lifespan_creates_the_data_dir(client, settings):
     assert settings.data_dir.is_dir()
 

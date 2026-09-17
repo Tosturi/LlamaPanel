@@ -5,7 +5,7 @@ import { LogViewer } from "./components/LogViewer";
 import { ModelList } from "./components/ModelList";
 import { PresetBar } from "./components/PresetBar";
 import { ServerControls } from "./components/ServerControls";
-import type { BinaryInfo, FlagDef, FlagValues, ModelInfo, Preset, StatusResponse } from "./types";
+import type { BinaryInfo, FlagDef, FlagValues, LoraInfo, ModelInfo, Preset, StatusResponse } from "./types";
 
 function defaultsFromSchema(schema: FlagDef[]): FlagValues {
   const values: FlagValues = {};
@@ -13,8 +13,20 @@ function defaultsFromSchema(schema: FlagDef[]): FlagValues {
   return values;
 }
 
+/** "llama.cpp 0.4.1-dev (build 11026, b49650adb)" for current builds,
+ *  "llama.cpp build 6789 (a1b2c3d)" for ones that predate release versions. */
+function describeBuild(binary: BinaryInfo): string {
+  const details = [
+    binary.version !== null && binary.build !== null ? `build ${binary.build}` : null,
+    binary.commit,
+  ].filter(Boolean);
+  const head = binary.version ?? `build ${binary.build ?? "?"}`;
+  return `llama.cpp ${head}${details.length ? ` (${details.join(", ")})` : ""}`;
+}
+
 export default function App() {
   const [models, setModels] = useState<ModelInfo[]>([]);
+  const [loras, setLoras] = useState<LoraInfo[]>([]);
   const [schema, setSchema] = useState<FlagDef[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -40,6 +52,8 @@ export default function App() {
 
   const loadModels = () => {
     setModelsLoading(true);
+    // Same directory, same rescan button: adapters are refreshed with the models.
+    api.listLoras().then(setLoras).catch(() => {});
     return api.listModels().then(setModels).catch((e) => setError(String(e))).finally(() => setModelsLoading(false));
   };
 
@@ -165,8 +179,7 @@ export default function App() {
     }
     return (
       <div className="muted binary-info" title={binary.resolved_path ?? undefined}>
-        llama.cpp build {binary.build ?? "?"}
-        {binary.commit && ` (${binary.commit})`} · {schema.length} flags
+        {describeBuild(binary)} · {schema.length} flags
       </div>
     );
   })();
@@ -224,7 +237,13 @@ export default function App() {
               </button>
             </div>
           )}
-          <FlagsForm schema={schema} values={values} onChange={handleFlagChange} />
+          <FlagsForm
+            schema={schema}
+            values={values}
+            onChange={handleFlagChange}
+            loras={loras}
+            modelArch={models.find((m) => m.id === selectedId)?.architecture ?? null}
+          />
         </section>
 
         <section className="panel wide">

@@ -69,7 +69,13 @@ _REPEATABLE_RE = re.compile(
     re.I,
 )
 _DEPRECATED_RE = re.compile(r"DEPRECATED|has been removed", re.I)
-_VERSION_RE = re.compile(r"version:\s*(?P<build>\d+)\s*\((?P<commit>[^)]*)\)")
+# Two generations of `--version`:
+#   version: 6789 (a1b2c3d)                                  (up to late 2025)
+#   version: 0.4.1-dev (build 11026, commit b49650adb)       (since llama.cpp got release numbers)
+_VERSION_NEW_RE = re.compile(
+    r"version:\s*(?P<version>[^\s(]+)\s*\(build\s+(?P<build>\d+)\s*,\s*commit\s+(?P<commit>[^)]*)\)"
+)
+_VERSION_OLD_RE = re.compile(r"version:\s*(?P<build>\d+)\s*\((?P<commit>[^)]*)\)")
 _NUMBER_RE = re.compile(r"^[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?$")
 _RANGE_HINT_RE = re.compile(r"^<-?\d+\.{2,}-?\d+>$")  # <0...100>
 _WORD_LIST_HINT_RE = re.compile(r"^[a-z][a-z0-9_-]*(,[a-z][a-z0-9_-]*)+$")  # none,draft-simple,...
@@ -352,12 +358,17 @@ def parse_help_to_args(text: str) -> list[LlamaArg]:
     return out
 
 
-def parse_version(text: str) -> tuple[Optional[int], Optional[str]]:
-    m = _VERSION_RE.search(text)
+def parse_version(text: str) -> tuple[Optional[str], Optional[int], Optional[str]]:
+    """(release version, build number, commit) from `--version` output.
+    The release version is None for builds that predate it."""
+    m = _VERSION_NEW_RE.search(text)
+    version = m.group("version") if m else None
     if not m:
-        return None, None
+        m = _VERSION_OLD_RE.search(text)
+    if not m:
+        return None, None, None
     commit = m.group("commit").strip() or None
-    return int(m.group("build")), commit
+    return version, int(m.group("build")), commit
 
 
 # --- running the binary ------------------------------------------------------
@@ -428,9 +439,9 @@ class BinaryInspector:
                 resolved_path=None,
                 error=f"'{self.server_bin}' not found: not an existing file and not on PATH",
             )
-        build, commit, args, errors = None, None, [], []
+        version, build, commit, args, errors = None, None, None, [], []
         try:
-            build, commit = parse_version(_run(path, "--version"))
+            version, build, commit = parse_version(_run(path, "--version"))
         except (OSError, subprocess.SubprocessError) as exc:
             errors.append(f"--version failed: {exc}")
         try:
@@ -440,6 +451,7 @@ class BinaryInspector:
         return BinaryInfo(
             server_bin=self.server_bin,
             resolved_path=str(path),
+            version=version,
             build=build,
             commit=commit,
             args=args,

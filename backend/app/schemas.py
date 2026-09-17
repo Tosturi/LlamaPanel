@@ -30,6 +30,18 @@ class ModelInfo(ResponseModel):
     is_split: bool = False
 
 
+class LoraInfo(ResponseModel):
+    """A LoRA adapter GGUF (general.type == "adapter") found next to the
+    models or in the models_dir/loras subfolder."""
+
+    id: str  # path relative to models_dir, without .gguf, forward slashes
+    display_name: str
+    path: str  # what --lora takes
+    size_bytes: int
+    architecture: Optional[str] = None  # must match the model's for llama-server to apply it
+    base_model: Optional[str] = None  # general.base_model.0.name when the converter recorded it
+
+
 FlagType = Literal["boolean", "number", "string", "enum", "path"]
 FlagValue = Union[bool, int, float, str, None]
 # A repeatable flag (--lora) may carry a list of values.
@@ -79,6 +91,7 @@ class BinaryInfo(ResponseModel):
 
     server_bin: str
     resolved_path: Optional[str] = None
+    version: Optional[str] = None  # release version, e.g. "0.4.1-dev"; None for older builds
     build: Optional[int] = None  # llama.cpp build number, e.g. 6789
     commit: Optional[str] = None
     args: list[LlamaArg] = []
