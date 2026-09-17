@@ -55,7 +55,7 @@ def test_curated_flags_come_first_in_curated_order_and_are_labelled(schema):
     assert basic == ["n_gpu_layers", "ctx_size", "kv_offload", "flash_attn", "host", "port", "seed"]
     labels = {f.key: f.label for f in schema}
     assert labels["ctx_size"] == "Context Size"
-    assert labels["load_mode"] == "Model Load Mode (--load-mode)"
+    assert labels["load_mode"] == "Model Load Mode"
 
 
 def test_uncurated_flags_are_labelled_by_their_cli_and_grouped_by_section(schema, by_key):

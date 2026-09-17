@@ -1,47 +1,122 @@
+import { useMemo, useState } from "react";
 import type { FlagDef, FlagValues } from "../types";
+import { HelpTip } from "./HelpTip";
 
-function FlagInput({ flag, value, onChange }: { flag: FlagDef; value: unknown; onChange: (v: any) => void }) {
+type Value = FlagValues[string];
+
+// llama.cpp section names -> what the panel calls them, in display order.
+const SECTIONS: [string, string][] = [
+  ["common params", "Common"],
+  ["example-specific params", "Server"],
+  ["sampling params", "Sampling"],
+  ["speculative params", "Speculative decoding"],
+];
+
+function sectionTitle(section: string): string {
+  return SECTIONS.find(([s]) => s === section)?.[1] ?? section;
+}
+
+/** Whether the value would make it onto the command line, i.e. is set
+ *  and differs from the flag's documented default. Mirrors build_args. */
+export function isChanged(flag: FlagDef, value: Value): boolean {
+  if (value === null || value === undefined || value === "") return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (flag.type === "boolean") {
+    if (flag.default === null || flag.default === undefined) return true;
+    return Boolean(value) !== Boolean(flag.default);
+  }
+  if (flag.default === null || flag.default === undefined) return true;
+  return String(value) !== String(flag.default);
+}
+
+function textValue(value: Value): string {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) return value.filter((v) => v !== null).join(",");
+  return String(value);
+}
+
+function FlagInput({ flag, value, onChange }: { flag: FlagDef; value: Value; onChange: (v: Value) => void }) {
+  const id = `flag-${flag.key}`;
   switch (flag.type) {
     case "boolean":
       return (
-        <label className="flag-row checkbox">
-          <input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />
-          {flag.label}
-        </label>
+        <input
+          id={id}
+          type="checkbox"
+          checked={Boolean(value)}
+          onChange={(e) => onChange(e.target.checked)}
+        />
       );
     case "enum":
       return (
-        <label className="flag-row">
-          {flag.label}
-          <select value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value || null)}>
-            <option value="">(default)</option>
-            {flag.options?.map((o) => (
-              <option key={o} value={o}>
-                {o}
-              </option>
-            ))}
-          </select>
-        </label>
+        <select id={id} value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value || null)}>
+          <option value="">(default)</option>
+          {flag.options?.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
       );
     case "number":
       return (
-        <label className="flag-row">
-          {flag.label}
-          <input
-            type="number"
-            value={(value as number) ?? ""}
-            onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
-          />
-        </label>
+        <input
+          id={id}
+          type="number"
+          step="any"
+          value={typeof value === "number" ? value : ""}
+          placeholder={flag.default !== null ? String(flag.default) : ""}
+          onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+        />
       );
     default:
       return (
-        <label className="flag-row">
-          {flag.label}
-          <input type="text" value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value || null)} />
-        </label>
+        <input
+          id={id}
+          type="text"
+          value={textValue(value)}
+          placeholder={
+            flag.default !== null ? String(flag.default) : flag.type === "path" ? "path" : flag.repeatable ? "a,b,c" : ""
+          }
+          onChange={(e) => onChange(e.target.value || null)}
+        />
       );
   }
+}
+
+function FlagRow({ flag, value, onChange }: { flag: FlagDef; value: Value; onChange: (v: Value) => void }) {
+  const changed = isChanged(flag, value);
+  const showCli = flag.label !== flag.cli;
+  return (
+    <div className={`flag-row${changed ? " changed" : ""}${flag.type === "boolean" ? " checkbox" : ""}`}>
+      <label className="flag-label" htmlFor={`flag-${flag.key}`}>
+        {flag.type === "boolean" && <FlagInput flag={flag} value={value} onChange={onChange} />}
+        <span className="flag-name">{flag.label}</span>
+        {showCli && <code className="flag-cli">{flag.cli}</code>}
+      </label>
+      <span className="flag-controls">
+        {flag.type !== "boolean" && <FlagInput flag={flag} value={value} onChange={onChange} />}
+        {changed && (
+          <button
+            type="button"
+            className="flag-reset"
+            title={`Reset to default${flag.default !== null ? ` (${String(flag.default)})` : ""}`}
+            onClick={() => onChange(flag.default ?? null)}
+          >
+            ×
+          </button>
+        )}
+        <HelpTip flag={flag} />
+      </span>
+    </div>
+  );
+}
+
+function matches(flag: FlagDef, needle: string): boolean {
+  const haystack = [flag.key, flag.cli, flag.label, flag.help ?? "", ...flag.aliases, ...flag.aliases_neg, flag.env ?? ""]
+    .join(" ")
+    .toLowerCase();
+  return needle.split(/\s+/).every((word) => haystack.includes(word));
 }
 
 export function FlagsForm({
@@ -51,27 +126,66 @@ export function FlagsForm({
 }: {
   schema: FlagDef[];
   values: FlagValues;
-  onChange: (key: string, value: unknown) => void;
+  onChange: (key: string, value: Value) => void;
 }) {
-  const basic = schema.filter((f) => f.group === "basic");
-  const advanced = schema.filter((f) => f.group === "advanced");
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+
+  const basic = useMemo(() => schema.filter((f) => f.group === "basic"), [schema]);
+  const sections = useMemo(() => {
+    const order = new Map<string, FlagDef[]>();
+    for (const [name] of SECTIONS) order.set(name, []);
+    for (const f of schema) {
+      if (f.group === "basic") continue;
+      if (!order.has(f.section)) order.set(f.section, []);
+      order.get(f.section)!.push(f);
+    }
+    return [...order.entries()].filter(([, flags]) => flags.length > 0);
+  }, [schema]);
+
+  const changedCount = (flags: FlagDef[]) => flags.filter((f) => isChanged(f, values[f.key])).length;
+  const row = (f: FlagDef) => <FlagRow key={f.key} flag={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} />;
+
+  if (schema.length === 0) return <p className="muted">Loading flags…</p>;
 
   return (
     <div className="flags-form">
-      <fieldset>
-        <legend>Basic</legend>
-        {basic.map((f) => (
-          <FlagInput key={f.key} flag={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} />
-        ))}
-      </fieldset>
-      <details>
-        <summary>Advanced</summary>
+      <input
+        type="search"
+        className="flag-search"
+        placeholder={`Search ${schema.length} flags…`}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+
+      {needle ? (
         <fieldset>
-          {advanced.map((f) => (
-            <FlagInput key={f.key} flag={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} />
-          ))}
+          {schema.filter((f) => matches(f, needle)).map(row)}
+          {!schema.some((f) => matches(f, needle)) && <p className="muted">No flags match “{query}”.</p>}
         </fieldset>
-      </details>
+      ) : (
+        <>
+          <fieldset>
+            <legend>Basic</legend>
+            {basic.map(row)}
+          </fieldset>
+          {sections.map(([section, flags]) => {
+            const changed = changedCount(flags);
+            return (
+              <details key={section} className="flag-section">
+                <summary>
+                  <span>{sectionTitle(section)}</span>
+                  <span className="muted">
+                    {changed > 0 && <span className="changed-count">{changed} set</span>}
+                    {flags.length}
+                  </span>
+                </summary>
+                <fieldset>{flags.map(row)}</fieldset>
+              </details>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }

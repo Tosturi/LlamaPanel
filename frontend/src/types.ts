@@ -18,5 +18,6 @@ export type RestartResponse = Schemas["RestartResponse"];
 export type Preset = Schemas["Preset"];
 export type StartRequest = Schemas["StartRequest"];
 export type DeletedResponse = Schemas["DeletedResponse"];
+export type BinaryInfo = Schemas["BinaryInfo"];
 
 export type FlagValues = StartRequest["flags"];
