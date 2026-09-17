@@ -4,10 +4,10 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from app import discovery
-from app.deps import ManagerDep, SettingsDep
+from app.deps import InspectorDep, ManagerDep, SettingsDep
 from app.flags import FLAG_SCHEMA, build_args
 from app.gguf_scanner import scan
-from app.schemas import FlagDef, ModelInfo, RestartResponse, StartRequest, StatusResponse
+from app.schemas import BinaryInfo, FlagDef, ModelInfo, RestartResponse, StartRequest, StatusResponse
 from app.settings import Settings
 
 router = APIRouter(prefix="/api/server", tags=["server"])
@@ -43,6 +43,15 @@ def _binary_not_found(settings: Settings) -> HTTPException:
 @router.get("/flags", response_model=list[FlagDef])
 def get_flag_schema() -> list[FlagDef]:
     return FLAG_SCHEMA
+
+
+@router.get("/binary", response_model=BinaryInfo)
+async def get_binary_info(inspector: InspectorDep, refresh: bool = False) -> BinaryInfo:
+    """Version and full option list of the configured llama-server, learned
+    by running `--version` and `--help`. Cached until the binary on disk
+    changes; `?refresh=true` forces a re-probe. Never fails: a missing or
+    broken binary is reported in `error` with whatever else was learned."""
+    return await asyncio.to_thread(inspector.inspect, refresh)
 
 
 @router.get("/status", response_model=StatusResponse)

@@ -45,6 +45,35 @@ class FlagDef(ResponseModel):
     help: Optional[str] = None
 
 
+class LlamaArg(ResponseModel):
+    """One option as reported by `llama-server --help`. Type, options and
+    default are inferred from the help text (see app/introspection.py)."""
+
+    key: str  # first long spelling, --ctx-size -> ctx_size
+    args: list[str]  # every positive spelling, short and long
+    args_neg: list[str] = []  # --no-* twins, when the flag has them
+    value_hints: list[str] = []  # [] for a bare switch, ["N"], ["FNAME", "SCALE"], ...
+    type: FlagType
+    options: Optional[list[str]] = None
+    default: Optional[FlagValue] = None
+    help: str = ""
+    env: Optional[str] = None
+    section: str = ""  # "common params", "sampling params", ...
+    repeatable: bool = False
+    deprecated: bool = False  # help says "DEPRECATED" / "has been removed"
+
+
+class BinaryInfo(ResponseModel):
+    """What the panel learned by probing the configured llama-server."""
+
+    server_bin: str
+    resolved_path: Optional[str] = None
+    build: Optional[int] = None  # llama.cpp build number, e.g. 6789
+    commit: Optional[str] = None
+    args: list[LlamaArg] = []
+    error: Optional[str] = None  # set when the binary is missing or a probe failed
+
+
 class StartRequest(BaseModel):
     model_id: str
     flags: dict[str, FlagValue] = {}
