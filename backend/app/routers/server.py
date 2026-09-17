@@ -4,8 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from app import discovery
-from app.deps import InspectorDep, ManagerDep, SettingsDep
-from app.flags import FLAG_SCHEMA, build_args
+from app.deps import CatalogDep, InspectorDep, ManagerDep, SettingsDep
 from app.gguf_scanner import scan
 from app.schemas import BinaryInfo, FlagDef, ModelInfo, RestartResponse, StartRequest, StatusResponse
 from app.settings import Settings
@@ -41,8 +40,11 @@ def _binary_not_found(settings: Settings) -> HTTPException:
 
 
 @router.get("/flags", response_model=list[FlagDef])
-def get_flag_schema() -> list[FlagDef]:
-    return FLAG_SCHEMA
+async def get_flag_schema(catalog: CatalogDep) -> list[FlagDef]:
+    """Form schema for the installed llama-server (from its --help), or
+    from the bundled snapshot when the binary can't be probed."""
+    # First call may run the binary; keep that off the event loop.
+    return await asyncio.to_thread(catalog.schema)
 
 
 @router.get("/binary", response_model=BinaryInfo)
@@ -55,7 +57,7 @@ async def get_binary_info(inspector: InspectorDep, refresh: bool = False) -> Bin
 
 
 @router.get("/status", response_model=StatusResponse)
-async def get_status(manager: ManagerDep, settings: SettingsDep) -> StatusResponse:
+async def get_status(manager: ManagerDep, settings: SettingsDep, catalog: CatalogDep) -> StatusResponse:
     # If we don't think anything is running, check whether a llama-server is
     # actually alive out there (started manually, or left over from a
     # previous run of this panel) and adopt it so the UI reflects reality.
@@ -63,7 +65,8 @@ async def get_status(manager: ManagerDep, settings: SettingsDep) -> StatusRespon
     # the UI polls this endpoint every few seconds - run them off the event
     # loop so other requests (start, logs websocket) don't stall behind it.
     if manager.state == "stopped":
-        found = await asyncio.to_thread(discovery.find_running_llama_server, settings.server_bin)
+        schema = await asyncio.to_thread(catalog.schema)
+        found = await asyncio.to_thread(discovery.find_running_llama_server, settings.server_bin, schema)
         # Re-check: a Start may have landed while the scan was running.
         if found and manager.state == "stopped":
             model_id = await asyncio.to_thread(_match_model_id, settings.models_dir, found["model_path"])
@@ -73,13 +76,15 @@ async def get_status(manager: ManagerDep, settings: SettingsDep) -> StatusRespon
 
 
 @router.post("/start", response_model=StatusResponse)
-async def start_server(req: StartRequest, manager: ManagerDep, settings: SettingsDep) -> StatusResponse:
+async def start_server(
+    req: StartRequest, manager: ManagerDep, settings: SettingsDep, catalog: CatalogDep
+) -> StatusResponse:
     model = _find_model(settings, req.model_id)
 
     if manager.state in ("starting", "running"):
         raise HTTPException(status_code=409, detail=f"Server is already {manager.state}; stop it first")
 
-    args = build_args(model.entry_path, req.flags)
+    args = await asyncio.to_thread(catalog.build_args, model.entry_path, req.flags)
     try:
         await manager.start(model_id=model.id, binary=settings.server_bin, args=args, flags=req.flags)
     except FileNotFoundError:
@@ -95,7 +100,9 @@ async def stop_server(manager: ManagerDep) -> StatusResponse:
 
 
 @router.post("/restart", response_model=RestartResponse)
-async def restart_server(req: StartRequest, manager: ManagerDep, settings: SettingsDep) -> RestartResponse:
+async def restart_server(
+    req: StartRequest, manager: ManagerDep, settings: SettingsDep, catalog: CatalogDep
+) -> RestartResponse:
     """Apply new flags to the running server. Restarts immediately if it's
     idle; if llama-server reports an in-flight generation (via /slots), the
     restart is queued and applied automatically as soon as it finishes."""
@@ -104,7 +111,7 @@ async def restart_server(req: StartRequest, manager: ManagerDep, settings: Setti
     if manager.state not in ("running", "starting"):
         raise HTTPException(status_code=409, detail="Server is not running; use Start instead")
 
-    args = build_args(model.entry_path, req.flags)
+    args = await asyncio.to_thread(catalog.build_args, model.entry_path, req.flags)
     try:
         result = await manager.restart(model_id=model.id, binary=settings.server_bin, args=args, flags=req.flags)
     except FileNotFoundError:

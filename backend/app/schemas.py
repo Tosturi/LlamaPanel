@@ -32,17 +32,28 @@ class ModelInfo(ResponseModel):
 
 FlagType = Literal["boolean", "number", "string", "enum", "path"]
 FlagValue = Union[bool, int, float, str, None]
+# A repeatable flag (--lora) may carry a list of values.
+FlagValues = dict[str, Union[FlagValue, list[FlagValue]]]
 
 
 class FlagDef(ResponseModel):
-    key: str
-    cli: str
+    """One form field. Built from the installed llama-server's --help plus
+    the curated overlay in app/flags.py."""
+
+    key: str  # preset key; stable across llama.cpp renames for curated flags
+    cli: str  # spelling emitted on the command line
+    cli_neg: Optional[str] = None  # --no-* spelling for a boolean with a twin
+    aliases: list[str] = []  # every positive spelling (short and long)
+    aliases_neg: list[str] = []  # every negative spelling
     type: FlagType
     label: str
     group: Literal["basic", "advanced"]
+    section: str = ""  # llama.cpp help section: "common params", ...
     default: Optional[FlagValue] = None
     options: Optional[list[str]] = None
     help: Optional[str] = None
+    env: Optional[str] = None
+    repeatable: bool = False
 
 
 class LlamaArg(ResponseModel):
@@ -76,16 +87,20 @@ class BinaryInfo(ResponseModel):
 
 class StartRequest(BaseModel):
     model_id: str
-    flags: dict[str, FlagValue] = {}
+    flags: FlagValues = {}
 
 
 class Preset(BaseModel):
     name: str
     model_id: str
-    flags: dict[str, FlagValue] = {}
+    flags: FlagValues = {}
     # Unix time of the last save; None for presets migrated from older files.
     # Set by the server, ignored on input.
     updated_at: Optional[float] = None
+    # Flag keys the installed llama-server doesn't know (saved against another
+    # build). They stay in `flags` untouched but won't reach the command
+    # line. Computed on read, ignored on input.
+    unsupported: list[str] = []
 
 
 ServerState = Literal["stopped", "starting", "running", "stopping", "crashed"]
@@ -96,7 +111,7 @@ class StatusResponse(ResponseModel):
     pid: Optional[int] = None
     model_id: Optional[str] = None
     args: Optional[list[str]] = None
-    flags: Optional[dict[str, FlagValue]] = None
+    flags: Optional[FlagValues] = None
     adopted: bool = False
     started_at: Optional[float] = None
     exit_code: Optional[int] = None

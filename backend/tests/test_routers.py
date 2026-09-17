@@ -132,7 +132,7 @@ def test_restart_rejects_when_server_not_running(client, settings, monkeypatch):
     settings.models_dir.mkdir()
     (settings.models_dir / "solo.gguf").write_bytes(b"")
     # Nothing is running, and make sure discovery doesn't adopt a real one.
-    monkeypatch.setattr("app.routers.server.discovery.find_running_llama_server", lambda server_bin: None)
+    monkeypatch.setattr("app.routers.server.discovery.find_running_llama_server", lambda server_bin, schema: None)
 
     resp = client.post("/api/server/restart", json={"model_id": "solo", "flags": {}})
     assert resp.status_code == 409
@@ -144,7 +144,7 @@ def test_status_adopts_a_discovered_process(client, settings, monkeypatch):
     model_file.write_bytes(b"")
     seen = {}
 
-    def fake_find(server_bin):
+    def fake_find(server_bin, schema):
         seen["server_bin"] = server_bin
         return {"pid": 4242, "model_path": str(model_file), "flags": {"ctx_size": 2048}}
 
@@ -162,7 +162,7 @@ def test_status_adopts_a_discovered_process(client, settings, monkeypatch):
 
 
 def test_status_does_not_adopt_when_nothing_is_found(client, monkeypatch):
-    monkeypatch.setattr("app.routers.server.discovery.find_running_llama_server", lambda server_bin: None)
+    monkeypatch.setattr("app.routers.server.discovery.find_running_llama_server", lambda server_bin, schema: None)
 
     body = client.get("/api/server/status").json()
 
@@ -180,7 +180,7 @@ def test_slow_process_scan_does_not_block_other_requests(client, monkeypatch):
     scan_started = threading.Event()
     release_scan = threading.Event()
 
-    def slow_find(server_bin):
+    def slow_find(server_bin, schema):
         scan_started.set()
         release_scan.wait(5)
         return None
@@ -212,7 +212,7 @@ def test_status_does_not_adopt_if_a_start_landed_during_the_scan(client, setting
     release_scan = threading.Event()
     manager = client.app.state.manager
 
-    def slow_find(server_bin):
+    def slow_find(server_bin, schema):
         scan_started.set()
         release_scan.wait(5)
         return {"pid": 4242, "model_path": None, "flags": {}}

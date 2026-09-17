@@ -1,22 +1,18 @@
 import psutil
+import pytest
 
 from app import discovery
+from app.flags import bundled_schema
 
 
-def test_coerce_number_parses_int():
-    assert discovery._coerce("number", "4096") == 4096
-
-
-def test_coerce_number_parses_float_when_not_int():
-    assert discovery._coerce("number", "1.5") == 1.5
-
-
-def test_coerce_number_falls_back_to_raw_string_on_garbage():
-    assert discovery._coerce("number", "auto") == "auto"
-
-
-def test_coerce_non_number_returns_raw_unchanged():
-    assert discovery._coerce("string", "auto") == "auto"
+@pytest.fixture(autouse=True)
+def schema(monkeypatch):
+    """Every test calls find_running_llama_server(server_bin) with the
+    bundled schema filled in, so the psutil plumbing stays the subject."""
+    sch = bundled_schema()
+    original = discovery.find_running_llama_server
+    monkeypatch.setattr(discovery, "find_running_llama_server", lambda server_bin: original(server_bin, sch))
+    return sch
 
 
 class _FakeProcess:
@@ -58,7 +54,7 @@ def test_find_running_llama_server_parses_model_and_flags(monkeypatch):
     assert found["pid"] == 123
     assert found["model_path"] == "/models/foo.gguf"
     assert found["flags"]["ctx_size"] == 8192
-    assert found["flags"]["no_kv_offload"] is True
+    assert found["flags"]["kv_offload"] is False  # --no-kv-offload is the negative spelling
     assert found["flags"]["flash_attn"] == "auto"
 
 

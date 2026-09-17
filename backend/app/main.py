@@ -6,6 +6,7 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.flags import FlagCatalog
 from app.introspection import BinaryInspector
 from app.llama_client import LlamaClient
 from app.presets import PresetStore
@@ -29,15 +30,17 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         settings.ensure_dirs()
         client = LlamaClient()
         app.state.settings = settings
-        app.state.presets = PresetStore(settings.presets_file)
+        # Lazy: the binary is probed on the first request that needs the
+        # flag schema, not here, so a missing llama-server never blocks
+        # panel startup (the bundled --help snapshot stands in).
+        app.state.inspector = BinaryInspector(settings.server_bin)
+        app.state.catalog = FlagCatalog(app.state.inspector)
+        app.state.presets = PresetStore(settings.presets_file, resolve=app.state.catalog.resolve)
         # First start after moving data_dir out of the install tree: pick up
         # presets an older release wrote next to run.py instead of showing
         # an empty list. No-op once data_dir has its own presets.json.
         app.state.presets.adopt_legacy_file(settings.legacy_presets_files)
         app.state.manager = ProcessManager(settings, client)
-        # Lazy: the binary is probed on the first /api/server/binary call,
-        # not here, so a missing llama-server never blocks panel startup.
-        app.state.inspector = BinaryInspector(settings.server_bin)
         try:
             yield
         finally:

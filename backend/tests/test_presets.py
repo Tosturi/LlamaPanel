@@ -7,9 +7,23 @@ from app.presets import FORMAT_VERSION, PresetStore
 from app.storage import NewerFormatError
 
 
+def _resolve(flags: dict) -> tuple[dict, list[str]]:
+    """Stand-in for FlagCatalog.resolve: knows two flags, coerces them."""
+    out, unsupported = {}, []
+    for k, v in flags.items():
+        if k == "ctx_size":
+            out[k] = int(v) if isinstance(v, str) else v
+        elif k == "no_kv_offload":
+            out["kv_offload"] = not (v in (True, "true"))
+        else:
+            out[k] = v
+            unsupported.append(k)
+    return out, unsupported
+
+
 @pytest.fixture
 def store(tmp_path) -> PresetStore:
-    return PresetStore(tmp_path / "presets.json")
+    return PresetStore(tmp_path / "presets.json", resolve=_resolve)
 
 
 def _read(store):
@@ -26,6 +40,7 @@ def test_upsert_then_list_roundtrip(store):
     assert saved["name"] == "p1"
     assert saved["model_id"] == "model-a"
     assert saved["flags"] == {"ctx_size": 4096}
+    assert saved["unsupported"] == []
     assert isinstance(saved["updated_at"], float)
     assert store.list() == [saved]
 
@@ -70,7 +85,7 @@ def test_load_migrates_v0_bare_list_format(store):
 
     items = store.list()
 
-    assert items == [{"name": "old", "model_id": "m", "flags": {"ctx_size": 1}, "updated_at": None}]
+    assert items == [{"name": "old", "model_id": "m", "flags": {"ctx_size": 1}, "updated_at": None, "unsupported": []}]
     assert _read(store)["version"] == FORMAT_VERSION
     assert store.path.with_name("presets.json.v0.bak").exists()
 
@@ -98,18 +113,29 @@ def test_newer_file_raises_instead_of_being_overwritten(store):
     assert _read(store)["version"] == FORMAT_VERSION + 1
 
 
-def test_flags_are_normalized_on_read(store):
-    # A value saved as text by an older UI comes back as the declared type.
+def test_flags_are_resolved_on_read(store):
+    # A value saved as text by an older UI comes back as the declared type,
+    # and a key from an older schema is re-keyed.
     store.path.write_text(
         json.dumps([{"name": "p", "model_id": "m", "flags": {"ctx_size": "8192", "no_kv_offload": "true"}}]),
         encoding="utf-8",
     )
-    assert store.list()[0]["flags"] == {"ctx_size": 8192, "no_kv_offload": True}
+    assert store.list()[0]["flags"] == {"ctx_size": 8192, "kv_offload": False}
 
 
-def test_unknown_flags_survive_a_roundtrip(store):
-    store.upsert("p", "m", {"from_the_future": "x", "ctx_size": 1})
-    assert store.list()[0]["flags"] == {"from_the_future": "x", "ctx_size": 1}
+def test_unknown_flags_survive_a_roundtrip_and_are_reported(store):
+    saved = store.upsert("p", "m", {"from_the_future": "x", "ctx_size": 1})
+    assert saved["unsupported"] == ["from_the_future"]
+    listed = store.list()[0]
+    assert listed["flags"] == {"from_the_future": "x", "ctx_size": 1}
+    assert listed["unsupported"] == ["from_the_future"]
+    # Derived on read, never persisted.
+    assert "unsupported" not in _read(store)["presets"][0]
+
+
+def test_store_without_a_resolver_passes_flags_through(tmp_path):
+    store = PresetStore(tmp_path / "presets.json")
+    assert store.upsert("p", "m", {"anything": 1})["flags"] == {"anything": 1}
 
 
 def test_entries_without_a_name_are_skipped(store):

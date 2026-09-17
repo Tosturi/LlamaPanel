@@ -102,7 +102,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Flag Schema */
+        /**
+         * Get Flag Schema
+         * @description Form schema for the installed llama-server (from its --help), or
+         *     from the bundled snapshot when the binary can't be probed.
+         */
         get: operations["get_flag_schema_api_server_flags_get"];
         put?: never;
         post?: never;
@@ -232,12 +236,30 @@ export interface components {
             /** Deleted */
             deleted: string;
         };
-        /** FlagDef */
+        /**
+         * FlagDef
+         * @description One form field. Built from the installed llama-server's --help plus
+         *     the curated overlay in app/flags.py.
+         */
         FlagDef: {
+            /**
+             * Aliases
+             * @default []
+             */
+            aliases: string[];
+            /**
+             * Aliases Neg
+             * @default []
+             */
+            aliases_neg: string[];
             /** Cli */
             cli: string;
+            /** Cli Neg */
+            cli_neg: string | null;
             /** Default */
             default: boolean | number | string | null;
+            /** Env */
+            env: string | null;
             /**
              * Group
              * @enum {string}
@@ -251,6 +273,16 @@ export interface components {
             label: string;
             /** Options */
             options: string[] | null;
+            /**
+             * Repeatable
+             * @default false
+             */
+            repeatable: boolean;
+            /**
+             * Section
+             * @default
+             */
+            section: string;
             /**
              * Type
              * @enum {string}
@@ -364,12 +396,17 @@ export interface components {
              * @default {}
              */
             flags: {
-                [key: string]: boolean | number | string | null;
+                [key: string]: boolean | number | string | (boolean | number | string | null)[] | null;
             };
             /** Model Id */
             model_id: string;
             /** Name */
             name: string;
+            /**
+             * Unsupported
+             * @default []
+             */
+            unsupported: string[];
             /** Updated At */
             updated_at?: number | null;
         };
@@ -389,7 +426,7 @@ export interface components {
              * @default {}
              */
             flags: {
-                [key: string]: boolean | number | string | null;
+                [key: string]: boolean | number | string | (boolean | number | string | null)[] | null;
             };
             /** Model Id */
             model_id: string;
@@ -409,7 +446,7 @@ export interface components {
             exit_code: number | null;
             /** Flags */
             flags: {
-                [key: string]: boolean | number | string | null;
+                [key: string]: boolean | number | string | (boolean | number | string | null)[] | null;
             } | null;
             /** Model Id */
             model_id: string | null;

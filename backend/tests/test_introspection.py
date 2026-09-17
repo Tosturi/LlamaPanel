@@ -1,9 +1,9 @@
-"""Parser tests run against tests/fixtures/llama_server_help.txt, a verbatim
-`llama-server --help` capture. Update the fixture from a newer build when
-llama.cpp changes the format and see what breaks."""
+"""Parser tests run against app/snapshots/llama-server-help.txt, a verbatim
+`llama-server --help` capture that also serves as the runtime fallback.
+Update it from a newer build when llama.cpp changes the format and see
+what breaks."""
 
 import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -17,7 +17,7 @@ from app.introspection import (
     resolve_binary,
 )
 
-FIXTURE = Path(__file__).parent / "fixtures" / "llama_server_help.txt"
+from app.flags import SNAPSHOT_PATH as FIXTURE  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -342,13 +342,19 @@ def test_parse_version_handles_unknown_commit_and_garbage():
 
 # --- binary resolution and probing ------------------------------------------
 
-def test_resolve_binary_prefers_an_existing_path(tmp_path):
+@pytest.fixture
+def real_resolve(monkeypatch):
+    """Undo conftest's stub so resolve_binary's own logic is under test."""
+    monkeypatch.setattr(introspection, "resolve_binary", resolve_binary)
+
+
+def test_resolve_binary_prefers_an_existing_path(tmp_path, real_resolve):
     exe = tmp_path / "llama-server"
     exe.write_bytes(b"")
     assert resolve_binary(str(exe)) == exe.resolve()
 
 
-def test_resolve_binary_falls_back_to_path_lookup(monkeypatch, tmp_path):
+def test_resolve_binary_falls_back_to_path_lookup(monkeypatch, tmp_path, real_resolve):
     exe = tmp_path / "llama-server"
     exe.write_bytes(b"")
     monkeypatch.setattr(introspection.shutil, "which", lambda name: str(exe) if name == "llama-server" else None)
@@ -377,7 +383,7 @@ def test_inspector_reports_missing_binary_without_raising(monkeypatch):
     assert "not found" in info.error
 
 
-def test_inspector_combines_version_and_help(monkeypatch, tmp_path, help_text):
+def test_inspector_combines_version_and_help(monkeypatch, tmp_path, help_text, real_resolve):
     exe = tmp_path / "llama-server"
     exe.write_bytes(b"x")
     run, _ = _fake_run({"--version": "version: 42 (deadbee)\n", "--help": help_text})
@@ -391,7 +397,7 @@ def test_inspector_combines_version_and_help(monkeypatch, tmp_path, help_text):
     assert info.error is None
 
 
-def test_inspector_caches_until_the_binary_changes(monkeypatch, tmp_path, help_text):
+def test_inspector_caches_until_the_binary_changes(monkeypatch, tmp_path, help_text, real_resolve):
     exe = tmp_path / "llama-server"
     exe.write_bytes(b"x")
     run, calls = _fake_run({"--version": "version: 1 (a)\n", "--help": help_text})
@@ -410,7 +416,7 @@ def test_inspector_caches_until_the_binary_changes(monkeypatch, tmp_path, help_t
     assert len(calls) == 6
 
 
-def test_inspector_reports_a_broken_help_but_keeps_the_version(monkeypatch, tmp_path):
+def test_inspector_reports_a_broken_help_but_keeps_the_version(monkeypatch, tmp_path, real_resolve):
     exe = tmp_path / "llama-server"
     exe.write_bytes(b"x")
     run, _ = _fake_run({"--version": "version: 7 (abc)\n", "--help": "error: unknown argument: --help\n"})
@@ -423,7 +429,7 @@ def test_inspector_reports_a_broken_help_but_keeps_the_version(monkeypatch, tmp_
     assert "--help failed" in info.error
 
 
-def test_inspector_reports_a_timeout(monkeypatch, tmp_path):
+def test_inspector_reports_a_timeout(monkeypatch, tmp_path, real_resolve):
     exe = tmp_path / "llama-server"
     exe.write_bytes(b"x")
     run, _ = _fake_run({
