@@ -72,6 +72,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/server/binary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Binary Info
+         * @description Version and full option list of the configured llama-server, learned
+         *     by running `--version` and `--help`. Cached until the binary on disk
+         *     changes; `?refresh=true` forces a re-probe. Never fails: a missing or
+         *     broken binary is reported in `error` with whatever else was learned.
+         */
+        get: operations["get_binary_info_api_server_binary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/server/flags": {
         parameters: {
             query?: never;
@@ -183,6 +206,27 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * BinaryInfo
+         * @description What the panel learned by probing the configured llama-server.
+         */
+        BinaryInfo: {
+            /**
+             * Args
+             * @default []
+             */
+            args: components["schemas"]["LlamaArg"][];
+            /** Build */
+            build: number | null;
+            /** Commit */
+            commit: string | null;
+            /** Error */
+            error: string | null;
+            /** Resolved Path */
+            resolved_path: string | null;
+            /** Server Bin */
+            server_bin: string;
+        };
         /** DeletedResponse */
         DeletedResponse: {
             /** Deleted */
@@ -227,6 +271,58 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * LlamaArg
+         * @description One option as reported by `llama-server --help`. Type, options and
+         *     default are inferred from the help text (see app/introspection.py).
+         */
+        LlamaArg: {
+            /** Args */
+            args: string[];
+            /**
+             * Args Neg
+             * @default []
+             */
+            args_neg: string[];
+            /** Default */
+            default: boolean | number | string | null;
+            /**
+             * Deprecated
+             * @default false
+             */
+            deprecated: boolean;
+            /** Env */
+            env: string | null;
+            /**
+             * Help
+             * @default
+             */
+            help: string;
+            /** Key */
+            key: string;
+            /** Options */
+            options: string[] | null;
+            /**
+             * Repeatable
+             * @default false
+             */
+            repeatable: boolean;
+            /**
+             * Section
+             * @default
+             */
+            section: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "boolean" | "number" | "string" | "enum" | "path";
+            /**
+             * Value Hints
+             * @default []
+             */
+            value_hints: string[];
         };
         /** ModelInfo */
         ModelInfo: {
@@ -467,6 +563,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_binary_info_api_server_binary_get: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BinaryInfo"];
                 };
             };
             /** @description Validation Error */

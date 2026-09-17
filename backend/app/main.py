@@ -6,6 +6,7 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.introspection import BinaryInspector
 from app.llama_client import LlamaClient
 from app.presets import PresetStore
 from app.process_manager import ProcessManager
@@ -34,6 +35,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         # an empty list. No-op once data_dir has its own presets.json.
         app.state.presets.adopt_legacy_file(settings.legacy_presets_files)
         app.state.manager = ProcessManager(settings, client)
+        # Lazy: the binary is probed on the first /api/server/binary call,
+        # not here, so a missing llama-server never blocks panel startup.
+        app.state.inspector = BinaryInspector(settings.server_bin)
         try:
             yield
         finally:

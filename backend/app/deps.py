@@ -12,6 +12,7 @@ from typing import Annotated
 from fastapi import Depends
 from starlette.requests import HTTPConnection
 
+from app.introspection import BinaryInspector
 from app.presets import PresetStore
 from app.process_manager import ProcessManager
 from app.settings import Settings
@@ -29,6 +30,11 @@ def get_presets(conn: HTTPConnection) -> PresetStore:
     return conn.app.state.presets
 
 
+def get_inspector(conn: HTTPConnection) -> BinaryInspector:
+    return conn.app.state.inspector
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+InspectorDep = Annotated[BinaryInspector, Depends(get_inspector)]
 ManagerDep = Annotated[ProcessManager, Depends(get_manager)]
 PresetsDep = Annotated[PresetStore, Depends(get_presets)]
