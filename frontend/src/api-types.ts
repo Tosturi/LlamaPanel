@@ -20,6 +20,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/loras": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Loras
+         * @description LoRA adapters found in the models directory and its loras/ subfolder.
+         */
+        get: operations["list_loras_api_loras_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/models": {
         parameters: {
             query?: never;
@@ -356,6 +376,25 @@ export interface components {
              */
             value_hints: string[];
         };
+        /**
+         * LoraInfo
+         * @description A LoRA adapter GGUF (general.type == "adapter") found next to the
+         *     models or in the models_dir/loras subfolder.
+         */
+        LoraInfo: {
+            /** Architecture */
+            architecture: string | null;
+            /** Base Model */
+            base_model: string | null;
+            /** Display Name */
+            display_name: string;
+            /** Id */
+            id: string;
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes: number;
+        };
         /** ModelInfo */
         ModelInfo: {
             /** Architecture */
@@ -503,6 +542,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    list_loras_api_loras_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoraInfo"][];
                 };
             };
         };

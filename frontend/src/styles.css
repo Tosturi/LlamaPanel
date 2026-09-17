@@ -52,6 +52,23 @@ header h1 .version { font-size: 0.75rem; font-weight: normal; margin-left: 0.5re
 .flag-section fieldset { margin-top: 0.5rem; }
 .changed-count { background: #26314a; color: #cfe0ff; border-radius: 999px; padding: 0 0.5rem; margin-right: 0.5rem; font-size: 0.75rem; text-transform: none; }
 
+/* LoRA adapter picker: a checklist over the scanned adapters. */
+.lora-picker { border-top: 1px solid #2a2e38; padding-top: 0.5rem !important; }
+.lora-picker legend { display: flex; align-items: center; gap: 0.5rem; }
+.lora-picker legend .changed-count { margin-right: 0; }
+.lora-picker > .muted code { color: #cfe0ff; }
+.lora-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; padding: 0.15rem 0.3rem; border-radius: 4px; border-left: 2px solid transparent; }
+.lora-item.changed { border-left-color: #5b8def; background: rgba(91, 141, 239, 0.06); }
+.lora-item.incompatible .lora-name { color: #9aa; }
+.lora-label { display: flex; align-items: center; gap: 0.5rem; flex: 1; min-width: 0; cursor: pointer; }
+.lora-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lora-item.custom .lora-name { font-family: monospace; font-size: 0.8rem; }
+.lora-meta { font-size: 0.75rem; color: #7d8590; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lora-warn { font-size: 0.75rem; color: #e0b341; white-space: nowrap; cursor: help; }
+.lora-scale { display: inline-flex; align-items: center; gap: 0.2rem; color: #9aa; font-size: 0.8rem; flex-shrink: 0; }
+.lora-scale input { width: 4.2rem; background: #0f1115; color: #e6e6e6; border: 1px solid #2a2e38; border-radius: 4px; padding: 0.2rem 0.4rem; }
+.lora-picker .flag-row { margin-top: 0.3rem; }
+
 /* "?" help tooltip: pure CSS, shows on hover and on keyboard focus. */
 .help-tip { position: relative; display: inline-flex; }
 .help-tip-icon { width: 1.2rem; height: 1.2rem; border-radius: 50%; border: 1px solid #3a4050; background: transparent; color: #9aa; font-size: 0.7rem; line-height: 1; cursor: help; padding: 0; }

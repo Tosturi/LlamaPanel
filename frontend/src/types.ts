@@ -9,6 +9,7 @@ type Schemas = components["schemas"];
 
 export type ModelPart = Schemas["ModelPart"];
 export type ModelInfo = Schemas["ModelInfo"];
+export type LoraInfo = Schemas["LoraInfo"];
 export type FlagDef = Schemas["FlagDef"];
 export type FlagType = FlagDef["type"];
 export type StatusResponse = Schemas["StatusResponse"];

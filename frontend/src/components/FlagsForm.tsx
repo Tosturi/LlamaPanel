@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import type { FlagDef, FlagValues } from "../types";
+import type { FlagDef, FlagValues, LoraInfo } from "../types";
 import { HelpTip } from "./HelpTip";
+import { LoraPicker } from "./LoraPicker";
 
 type Value = FlagValues[string];
 
@@ -112,6 +113,16 @@ function FlagRow({ flag, value, onChange }: { flag: FlagDef; value: Value; onCha
   );
 }
 
+const bySpelling = (schema: FlagDef[], cli: string) => schema.find((f) => f.aliases.includes(cli));
+
+/** The flags the LoRA picker takes over from the generic rows, when the
+ *  build has them. Matched by spelling, so a renamed key still finds them. */
+function loraFlags(schema: FlagDef[]) {
+  const lora = bySpelling(schema, "--lora");
+  if (!lora) return null;
+  return { lora, scaled: bySpelling(schema, "--lora-scaled"), initOnly: bySpelling(schema, "--lora-init-without-apply") };
+}
+
 function matches(flag: FlagDef, needle: string): boolean {
   const haystack = [flag.key, flag.cli, flag.label, flag.help ?? "", ...flag.aliases, ...flag.aliases_neg, flag.env ?? ""]
     .join(" ")
@@ -123,25 +134,35 @@ export function FlagsForm({
   schema,
   values,
   onChange,
+  loras = [],
+  modelArch = null,
 }: {
   schema: FlagDef[];
   values: FlagValues;
   onChange: (key: string, value: Value) => void;
+  loras?: LoraInfo[];
+  modelArch?: string | null;
 }) {
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
 
-  const basic = useMemo(() => schema.filter((f) => f.group === "basic"), [schema]);
+  const lora = useMemo(() => loraFlags(schema), [schema]);
+  // Rendered by the picker instead of as plain rows (search still lists them).
+  const pickerKeys = useMemo(
+    () => new Set([lora?.lora.key, lora?.scaled?.key, lora?.initOnly?.key].filter((k): k is string => Boolean(k))),
+    [lora],
+  );
+  const basic = useMemo(() => schema.filter((f) => f.group === "basic" && !pickerKeys.has(f.key)), [schema, pickerKeys]);
   const sections = useMemo(() => {
     const order = new Map<string, FlagDef[]>();
     for (const [name] of SECTIONS) order.set(name, []);
     for (const f of schema) {
-      if (f.group === "basic") continue;
+      if (f.group === "basic" || pickerKeys.has(f.key)) continue;
       if (!order.has(f.section)) order.set(f.section, []);
       order.get(f.section)!.push(f);
     }
     return [...order.entries()].filter(([, flags]) => flags.length > 0);
-  }, [schema]);
+  }, [schema, pickerKeys]);
 
   const changedCount = (flags: FlagDef[]) => flags.filter((f) => isChanged(f, values[f.key])).length;
   const row = (f: FlagDef) => <FlagRow key={f.key} flag={f} value={values[f.key]} onChange={(v) => onChange(f.key, v)} />;
@@ -169,6 +190,18 @@ export function FlagsForm({
             <legend>Basic</legend>
             {basic.map(row)}
           </fieldset>
+          {lora && (
+            <LoraPicker
+              loras={loras}
+              modelArch={modelArch}
+              loraFlag={lora.lora}
+              scaledFlag={lora.scaled}
+              values={values}
+              onChange={onChange}
+            >
+              {lora.initOnly && row(lora.initOnly)}
+            </LoraPicker>
+          )}
           {sections.map(([section, flags]) => {
             const changed = changedCount(flags);
             return (
