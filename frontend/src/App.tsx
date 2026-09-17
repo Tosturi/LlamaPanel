@@ -5,7 +5,7 @@ import { LogViewer } from "./components/LogViewer";
 import { ModelList } from "./components/ModelList";
 import { PresetBar } from "./components/PresetBar";
 import { ServerControls } from "./components/ServerControls";
-import type { FlagDef, FlagValues, ModelInfo, Preset, StatusResponse } from "./types";
+import type { BinaryInfo, FlagDef, FlagValues, ModelInfo, Preset, StatusResponse } from "./types";
 
 function defaultsFromSchema(schema: FlagDef[]): FlagValues {
   const values: FlagValues = {};
@@ -25,6 +25,10 @@ export default function App() {
   const [modelsLoading, setModelsLoading] = useState(true);
   const [actionPending, setActionPending] = useState<"start" | "stop" | "reload" | null>(null);
   const [version, setVersion] = useState<string | null>(null);
+  const [binary, setBinary] = useState<BinaryInfo | null>(null);
+  // Flags of the last loaded preset that the installed llama-server
+  // doesn't know; shown until the user dismisses or loads another preset.
+  const [unsupported, setUnsupported] = useState<{ preset: string; keys: string[] } | null>(null);
   // Bumped whenever a user action (start/stop/reload/cancel) lands a fresh
   // status, so a poll that was already in flight can tell it is stale.
   const statusVersion = useRef(0);
@@ -47,6 +51,7 @@ export default function App() {
       setSchema(s);
       setValues(defaultsFromSchema(s));
     }).catch((e) => setError(String(e)));
+    api.getBinaryInfo().then(setBinary).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -143,7 +148,28 @@ export default function App() {
   const handleLoadPreset = (preset: Preset) => {
     setSelectedId(preset.model_id);
     setValues({ ...defaultsFromSchema(schema), ...preset.flags });
+    setUnsupported(preset.unsupported.length > 0 ? { preset: preset.name, keys: preset.unsupported } : null);
   };
+
+  const binaryNotice = (() => {
+    if (!binary) return null;
+    if (binary.error) {
+      return (
+        <div className="flags-notice warn">
+          <span>
+            <strong>llama-server could not be probed</strong> ({binary.error}). The form below comes from a bundled
+            snapshot of <code>--help</code> and may not match your build.
+          </span>
+        </div>
+      );
+    }
+    return (
+      <div className="muted binary-info" title={binary.resolved_path ?? undefined}>
+        llama.cpp build {binary.build ?? "?"}
+        {binary.commit && ` (${binary.commit})`} · {schema.length} flags
+      </div>
+    );
+  })();
 
   const handleDeletePreset = (name: string) => {
     setError(null);
@@ -175,7 +201,10 @@ export default function App() {
         </section>
 
         <section className="panel">
-          <h2>Flags</h2>
+          <div className="panel-header">
+            <h2>Flags</h2>
+            {binaryNotice && !binary?.error && binaryNotice}
+          </div>
           <PresetBar
             presets={presets}
             canSave={selectedId !== null}
@@ -183,6 +212,18 @@ export default function App() {
             onSave={handleSavePreset}
             onDelete={handleDeletePreset}
           />
+          {binary?.error && binaryNotice}
+          {unsupported && (
+            <div className="flags-notice warn">
+              <span>
+                Preset <strong>{unsupported.preset}</strong> has flags this llama-server build doesn't know; they are kept
+                in the preset but won't be passed: <code>{unsupported.keys.join(", ")}</code>
+              </span>
+              <button className="link-button" onClick={() => setUnsupported(null)}>
+                dismiss
+              </button>
+            </div>
+          )}
           <FlagsForm schema={schema} values={values} onChange={handleFlagChange} />
         </section>
 

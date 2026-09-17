@@ -1,4 +1,5 @@
 import type {
+  BinaryInfo,
   DeletedResponse,
   FlagDef,
   FlagValues,
@@ -39,6 +40,8 @@ export const api = {
   listModels: () => fetch(`${BASE}/api/models`).then((r) => json<ModelInfo[]>(r)),
 
   getFlagSchema: () => fetch(`${BASE}/api/server/flags`).then((r) => json<FlagDef[]>(r)),
+
+  getBinaryInfo: () => fetch(`${BASE}/api/server/binary`).then((r) => json<BinaryInfo>(r)),
 
   getStatus: () => fetch(`${BASE}/api/server/status`).then((r) => json<StatusResponse>(r)),
 
