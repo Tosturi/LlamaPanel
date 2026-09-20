@@ -179,3 +179,34 @@ git push && git push origin v0.2.0
 ## Лицензия
 
 [MIT](LICENSE).
+
+
+### Multiple server instances
+
+The **Servers** page lists independent llama-server instances. Use **Create server**
+to assign a name and unique API port, then open it to choose a model and configure
+its flags. **Save configuration** persists changes without restarting;
+**Start** and **Apply & restart** also save the requested configuration.
+Draft edits survive navigation between instances within the current page session.
+Models and presets are shared; applying a preset does not change the instance port.
+The panel passes that port explicitly to llama-server.
+
+Each instance has its own process, readiness checks, restart queue and log stream.
+Ports are reserved across saved instances (even when stopped); an occupied external
+port is rejected before start. Stop an instance before changing its port or deleting
+it. Deleting its configuration does not delete model files, presets or log files.
+The default instance remains available for older API clients.
+
+Configurations and process identities are stored in `instances.json` in the panel's
+data directory. Additional instance logs live in `instances/<id>/llama-server.log`;
+the default instance retains the original log path. Closing the panel leaves the
+processes running. On the next launch, recorded PIDs are checked against creation
+time and executable identity before adoption. There is no automatic start of stopped
+instances. Pending restart requests are cancelled when the panel shuts down.
+Use one panel process per data directory. Available RAM/VRAM still limits how many
+models can run simultaneously; the panel does not allocate GPU memory for you.
+
+Instance configuration API: `GET/POST /api/instances`,
+`PUT/DELETE /api/instances/{id}`. Existing `/api/server/status`, `/start`, `/stop`,
+`/restart`, `/restart/cancel` and the logs WebSocket accept `?instance_id=<id>`.
+Omitting it targets `default`. `/flags` and `/binary` remain shared.

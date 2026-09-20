@@ -1,7 +1,7 @@
 import asyncio
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 
 from app import discovery
 from app.deps import CatalogDep, InspectorDep, ManagerDep, SettingsDep
@@ -57,72 +57,92 @@ async def get_binary_info(inspector: InspectorDep, refresh: bool = False) -> Bin
 
 
 @router.get("/status", response_model=StatusResponse)
-async def get_status(manager: ManagerDep, settings: SettingsDep, catalog: CatalogDep) -> StatusResponse:
+async def get_status(request: Request, manager: ManagerDep, settings: SettingsDep, catalog: CatalogDep) -> StatusResponse:
     # If we don't think anything is running, check whether a llama-server is
     # actually alive out there (started manually, or left over from a
     # previous run of this panel) and adopt it so the UI reflects reality.
     # The process scan and the model-directory scan are blocking I/O, and
     # the UI polls this endpoint every few seconds - run them off the event
     # loop so other requests (start, logs websocket) don't stall behind it.
-    if manager.state == "stopped":
+    if request.query_params.get("instance_id", "default") == "default" and manager.state == "stopped":
         schema = await asyncio.to_thread(catalog.schema)
         found = await asyncio.to_thread(discovery.find_running_llama_server, settings.server_bin, schema)
-        # Re-check: a Start may have landed while the scan was running.
-        if found and manager.state == "stopped":
-            model_id = await asyncio.to_thread(_match_model_id, settings.models_dir, found["model_path"])
-            if manager.state == "stopped":
-                manager.adopt(pid=found["pid"], model_id=model_id, flags=found["flags"])
+        registry = request.app.state.instances
+        async with registry.lock:
+            # A process owned by another instance must never be adopted twice.
+            if found and manager.state == "stopped" and not any(
+                m is not manager and m._pid == found["pid"] for m in registry.managers.values()
+            ):
+                port = int(found["flags"].get("port") or 8080)
+                if not any(r.id != "default" and r.port == port for r in registry.records.values()):
+                    model_id = await asyncio.to_thread(_match_model_id, settings.models_dir, found["model_path"])
+                    record = registry.records['default']
+                    record.port = port
+                    record.model_id = model_id
+                    record.flags = {k: v for k, v in found['flags'].items() if k != 'port'}
+                    manager.adopt(pid=found["pid"], model_id=model_id, flags=found["flags"])
     return await manager.status()
 
 
-@router.post("/start", response_model=StatusResponse)
-async def start_server(
-    req: StartRequest, manager: ManagerDep, settings: SettingsDep, catalog: CatalogDep
-) -> StatusResponse:
-    model = _find_model(settings, req.model_id)
+async def _launch(req, request, manager, settings, catalog, restart=False):
+    registry = request.app.state.instances
+    id = request.query_params.get('instance_id', 'default')
+    async with registry.lock:
+        record, manager = registry.get(id)
+        model = await asyncio.to_thread(_find_model, settings, req.model_id)
+        if restart and manager.state not in ('running', 'starting'):
+            raise HTTPException(409, 'Server is not running; use Start instead')
+        if not restart and (manager.state in ('running', 'starting', 'stopping') or manager.restart_pending):
+            raise HTTPException(409, 'Server is active; stop it first')
+        flags, _ = await asyncio.to_thread(catalog.resolve, req.flags)
+        if 'instance_id' in request.query_params:
+            flags['port'] = record.port
+        elif 'port' not in flags:
+            flags['port'] = record.port
+        await registry.ensure_port(id, flags, restarting=restart)
+        args = await asyncio.to_thread(catalog.build_args, model.entry_path, flags)
+        # Persist the requested configuration before spawning or queuing a restart.
+        record.model_id = model.id
+        record.port = int(flags['port'])
+        record.flags = {k: v for k, v in flags.items() if k != 'port'}
+        registry.save()
+        try:
+            if restart:
+                result = await manager.restart(model_id=model.id, binary=settings.server_bin, args=args, flags=flags)
+            else:
+                await manager.start(model_id=model.id, binary=settings.server_bin, args=args, flags=flags)
+                result = 'applied'
+        except FileNotFoundError:
+            raise _binary_not_found(settings)
+        status = await manager.status()
+        return RestartResponse(result=result, status=status) if restart else status
 
-    if manager.state in ("starting", "running"):
-        raise HTTPException(status_code=409, detail=f"Server is already {manager.state}; stop it first")
 
-    args = await asyncio.to_thread(catalog.build_args, model.entry_path, req.flags)
-    try:
-        await manager.start(model_id=model.id, binary=settings.server_bin, args=args, flags=req.flags)
-    except FileNotFoundError:
-        raise _binary_not_found(settings)
-    return await manager.status()
+@router.post('/start', response_model=StatusResponse)
+async def start_server(req: StartRequest, request: Request, manager: ManagerDep, settings: SettingsDep, catalog: CatalogDep):
+    return await _launch(req, request, manager, settings, catalog)
 
 
-@router.post("/stop", response_model=StatusResponse)
-async def stop_server(manager: ManagerDep) -> StatusResponse:
-    await manager.cancel_restart()
-    await manager.stop()
-    return await manager.status()
+@router.post('/stop', response_model=StatusResponse)
+async def stop_server(request: Request, manager: ManagerDep):
+    registry = request.app.state.instances
+    async with registry.lock:
+        await manager.cancel_restart()
+        await manager.stop()
+        registry.checkpoint(request.query_params.get('instance_id', 'default'))
+        return await manager.status()
 
 
-@router.post("/restart", response_model=RestartResponse)
-async def restart_server(
-    req: StartRequest, manager: ManagerDep, settings: SettingsDep, catalog: CatalogDep
-) -> RestartResponse:
-    """Apply new flags to the running server. Restarts immediately if it's
-    idle; if llama-server reports an in-flight generation (via /slots), the
-    restart is queued and applied automatically as soon as it finishes."""
-    model = _find_model(settings, req.model_id)
-
-    if manager.state not in ("running", "starting"):
-        raise HTTPException(status_code=409, detail="Server is not running; use Start instead")
-
-    args = await asyncio.to_thread(catalog.build_args, model.entry_path, req.flags)
-    try:
-        result = await manager.restart(model_id=model.id, binary=settings.server_bin, args=args, flags=req.flags)
-    except FileNotFoundError:
-        raise _binary_not_found(settings)
-    return RestartResponse(result=result, status=await manager.status())
+@router.post('/restart', response_model=RestartResponse)
+async def restart_server(req: StartRequest, request: Request, manager: ManagerDep, settings: SettingsDep, catalog: CatalogDep):
+    return await _launch(req, request, manager, settings, catalog, restart=True)
 
 
 @router.post("/restart/cancel", response_model=StatusResponse)
-async def cancel_restart(manager: ManagerDep) -> StatusResponse:
-    await manager.cancel_restart()
-    return await manager.status()
+async def cancel_restart(request: Request, manager: ManagerDep) -> StatusResponse:
+    async with request.app.state.instances.lock:
+        await manager.cancel_restart()
+        return await manager.status()
 
 
 @router.websocket("/logs")

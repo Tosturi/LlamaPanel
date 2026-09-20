@@ -23,8 +23,8 @@ def get_settings(conn: HTTPConnection) -> Settings:
     return conn.app.state.settings
 
 
-def get_manager(conn: HTTPConnection) -> ProcessManager:
-    return conn.app.state.manager
+def get_manager(conn: HTTPConnection, instance_id: str = "default") -> ProcessManager:
+    return conn.app.state.instances.get(instance_id)[1]
 
 
 def get_presets(conn: HTTPConnection) -> PresetStore:

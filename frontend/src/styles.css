@@ -238,3 +238,8 @@ dt { color: var(--muted); } dd { margin: 0; text-align: right; overflow-wrap: an
 .model-details dd { flex: 1; }
 .model-details code { overflow-wrap: anywhere; }
 .model-details ul { padding-left: 20px; }
+
+.instance-toolbar, .instance-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.instance-toolbar { margin-bottom: 20px; }
+.instance-actions .danger-button { margin-left: 0; }
+.instance-form { margin-bottom: 24px; max-width: 640px; }
