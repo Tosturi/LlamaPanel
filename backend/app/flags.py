@@ -263,24 +263,14 @@ def normalize_flags(values: dict, schema: list[FlagDef]) -> dict:
 
 # --- argv --------------------------------------------------------------------
 
-def _is_default(flag: FlagDef, value) -> bool:
-    if flag.default is None:
-        return False
-    if isinstance(value, bool) or isinstance(flag.default, bool):
-        return value is flag.default
-    return str(value) == str(flag.default)
-
-
 def build_args(model_entry_path: str, values: dict, schema: list[FlagDef]) -> list[str]:
     """Turn {flag_key: value} into a llama-server argv list.
 
-    Values equal to the flag's documented default are left out: with a
-    form that seeds every field from its default, the command line would
-    otherwise carry a hundred no-op tokens. Booleans with a --no-* twin are
-    emitted either way when they differ from the default (`--no-kv-offload`
-    to switch an enabled-by-default feature off); a plain switch is only
-    ever emitted when true. Repeatable flags accept a list and are emitted
-    once per item. Keys not in the schema are ignored."""
+    Only values supplied by the caller are emitted, including explicit values
+    equal to documented defaults. Missing/null/empty values are unset. Boolean
+    pairs emit the requested spelling; plain switches emit only when true.
+    Repeatable flags emit once per item. Unknown keys are ignored.
+    """
     args: list[str] = ["--model", model_entry_path]
     by_key = {f.key: f for f in schema}
 
@@ -290,8 +280,6 @@ def build_args(model_entry_path: str, values: dict, schema: list[FlagDef]) -> li
             continue
         if flag.type == "boolean":
             enabled = bool(value)
-            if _is_default(flag, enabled):
-                continue
             if enabled:
                 args.append(flag.cli)
             elif flag.cli_neg:
@@ -299,7 +287,7 @@ def build_args(model_entry_path: str, values: dict, schema: list[FlagDef]) -> li
             continue
         items = value if isinstance(value, list) else [value]
         for item in items:
-            if item is None or item == "" or _is_default(flag, item):
+            if item is None or item == "":
                 continue
             args.extend([flag.cli, str(item)])
 

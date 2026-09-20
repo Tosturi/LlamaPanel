@@ -179,7 +179,7 @@ def test_resolve_accepts_a_list_for_a_repeatable_flag(schema):
 # --- build_args --------------------------------------------------------------
 
 def test_build_args_always_starts_with_model_path(schema):
-    assert build_args("/models/foo.gguf", {}, schema)[:2] == ["--model", "/models/foo.gguf"]
+    assert build_args("/models/foo.gguf", {}, schema) == ["--model", "/models/foo.gguf"]
 
 
 def test_build_args_value_flag_emits_flag_followed_by_value(schema):
@@ -192,9 +192,9 @@ def test_build_args_skips_none_and_empty_values(schema):
     assert args == ["--model", "/m.gguf"]
 
 
-def test_build_args_skips_values_equal_to_the_documented_default(schema):
+def test_build_args_preserves_explicit_values_equal_to_documented_defaults(schema):
     args = build_args("/m.gguf", {"port": 8080, "host": "127.0.0.1", "flash_attn": "auto", "temp": 0.8}, schema)
-    assert args == ["--model", "/m.gguf"]
+    assert args[2:] == ["--port", "8080", "--host", "127.0.0.1", "--flash-attn", "auto", "--temp", "0.8"]
     args = build_args("/m.gguf", {"port": 8081}, schema)
     assert args[2:] == ["--port", "8081"]
 
@@ -224,12 +224,12 @@ def test_build_args_plain_switch_is_emitted_only_when_true(schema):
 
 
 def test_build_args_boolean_pair_emits_the_negative_spelling_to_turn_a_default_off(schema):
-    # kv-offload is enabled by default: True is a no-op, False needs --no-kv-offload.
-    assert build_args("/m.gguf", {"kv_offload": True}, schema) == ["--model", "/m.gguf"]
+    # Explicit boolean values are preserved regardless of documented defaults.
+    assert build_args("/m.gguf", {"kv_offload": True}, schema)[2:] == ["--kv-offload"]
     assert build_args("/m.gguf", {"kv_offload": False}, schema)[2:] == ["--no-kv-offload"]
     # context-shift is disabled by default: the positive spelling turns it on.
     assert build_args("/m.gguf", {"context_shift": True}, schema)[2:] == ["--context-shift"]
-    assert build_args("/m.gguf", {"context_shift": False}, schema) == ["--model", "/m.gguf"]
+    assert build_args("/m.gguf", {"context_shift": False}, schema)[2:] == ["--no-context-shift"]
 
 
 def test_build_args_boolean_pair_with_unknown_default_is_always_explicit(schema):
@@ -317,3 +317,8 @@ def test_catalog_rebuilds_when_the_inspector_reports_a_new_binary():
 
 def test_build_schema_on_empty_input_is_empty():
     assert build_schema([]) == []
+
+
+def test_only_requested_context_is_emitted(schema):
+    assert build_args("D:/models/bonsai.gguf", {"ctx_size": 64000}, schema) == [
+        "--model", "D:/models/bonsai.gguf", "--ctx-size", "64000"]
