@@ -15,12 +15,6 @@ import type {
   StatusResponse,
 } from "./types";
 
-function defaultsFromSchema(schema: FlagDef[]): FlagValues {
-  const values: FlagValues = {};
-  for (const f of schema) values[f.key] = f.default ?? null;
-  return values;
-}
-
 /** "llama.cpp 0.4.1-dev (build 11026, b49650adb)" for current builds,
  *  "llama.cpp build 6789 (a1b2c3d)" for ones that predate release versions. */
 function describeBuild(binary: BinaryInfo): string {
@@ -99,7 +93,6 @@ export default function App() {
       .getFlagSchema()
       .then((s) => {
         setSchema(s);
-        setValues(defaultsFromSchema(s));
       })
       .catch((e) => setError(String(e)));
     api
@@ -149,11 +142,22 @@ export default function App() {
     if (!isLive || status.pid === null || status.pid === syncedPid) return;
     setSyncedPid(status.pid);
     if (status.model_id) setSelectedId(status.model_id);
-    setValues({ ...defaultsFromSchema(schema), ...(status.flags ?? {}) });
+    setValues({ ...(status.flags ?? {}) });
   }, [status, schema, syncedPid]);
 
   const handleFlagChange = (key: string, value: unknown) => {
-    setValues((prev) => ({ ...prev, [key]: value as FlagValues[string] }));
+    setValues((prev) => {
+      const next = { ...prev };
+      if (
+        value === null ||
+        value === undefined ||
+        value === "" ||
+        (Array.isArray(value) && !value.length)
+      )
+        delete next[key];
+      else next[key] = value as FlagValues[string];
+      return next;
+    });
   };
 
   const handleStart = () => {
@@ -225,7 +229,7 @@ export default function App() {
 
   const handleLoadPreset = (preset: Preset) => {
     setSelectedId(preset.model_id);
-    setValues({ ...defaultsFromSchema(schema), ...preset.flags });
+    setValues({ ...preset.flags });
     setUnsupported(
       preset.unsupported.length > 0
         ? { preset: preset.name, keys: preset.unsupported }
@@ -274,8 +278,8 @@ export default function App() {
     (selectedId !== status?.model_id ||
       schema.some(
         (f) =>
-          JSON.stringify(values[f.key] ?? f.default ?? null) !==
-          JSON.stringify(status?.flags?.[f.key] ?? f.default ?? null),
+          JSON.stringify(values[f.key] ?? null) !==
+          JSON.stringify(status?.flags?.[f.key] ?? null),
       ));
   const configure = () => {
     setPage("server");
@@ -536,6 +540,7 @@ export default function App() {
                 )}
                 <FlagsForm
                   schema={schema}
+                  onClear={() => setValues({})}
                   values={values}
                   onChange={handleFlagChange}
                   loras={loras}
