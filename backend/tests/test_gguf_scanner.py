@@ -178,7 +178,8 @@ def test_scan_uses_the_parsed_header(tmp_path):
     models = scanner.scan(tmp_path)
 
     assert models[0].id == "some-file"
-    assert models[0].display_name == "Qwen3 9B"
+    assert models[0].display_name == "some-file"
+    assert models[0].metadata_name == "Qwen3 9B"
     assert models[0].architecture == "qwen3"
     assert models[0].file_type == "Q5_K_M"
     assert models[0].context_length == 40960
@@ -257,13 +258,14 @@ def test_scan_treats_non_split_file_as_single_model(tmp_path, monkeypatch):
     assert models[0].id == "solo-model"
 
 
-def test_scan_prefers_embedded_name_over_filename(tmp_path, monkeypatch):
+def test_scan_uses_filename_and_preserves_embedded_name(tmp_path, monkeypatch):
     monkeypatch.setattr(scanner, "_read_gguf_metadata", lambda p: {"name": "Fancy Name"})
     _touch(tmp_path / "raw-filename.gguf")
 
     models = scanner.scan(tmp_path)
 
-    assert models[0].display_name == "Fancy Name"
+    assert models[0].display_name == "raw-filename"
+    assert models[0].metadata_name == "Fancy Name"
 
 
 def test_scan_falls_back_to_filename_when_no_embedded_name(tmp_path, monkeypatch):
@@ -295,14 +297,32 @@ def test_metadata_is_cached_until_the_file_changes(tmp_path, monkeypatch):
     monkeypatch.setattr(scanner, "_read_gguf_metadata", fake_read)
     f = _touch(tmp_path / "model.gguf")
 
-    first = scanner.scan(tmp_path)[0].display_name
-    second = scanner.scan(tmp_path)[0].display_name
+    first = scanner.scan(tmp_path)[0].metadata_name
+    second = scanner.scan(tmp_path)[0].metadata_name
     assert first == second == "call-1"
     assert len(calls) == 1
 
     new_mtime = f.stat().st_mtime + 5
     os.utime(f, (new_mtime, new_mtime))
 
-    third = scanner.scan(tmp_path)[0].display_name
+    third = scanner.scan(tmp_path)[0].metadata_name
     assert third == "call-2"
     assert len(calls) == 2
+
+
+def test_split_display_name_ignores_misleading_metadata(tmp_path):
+    for part in (1, 2):
+        (tmp_path / f"bonsai-2-Q4_K_M-{part:05d}-of-00002.gguf").write_bytes(
+            _gguf([("general.name", "hf")]))
+    model, = scanner.scan(tmp_path)
+    assert model.display_name == "bonsai-2-Q4_K_M"
+    assert model.metadata_name == "hf"
+    assert len(model.parts) == 2
+    assert model.id == "bonsai-2-Q4_K_M"
+
+
+def test_filename_is_retained_when_metadata_cannot_be_read(tmp_path):
+    (tmp_path / "bonsai-2.gguf").write_bytes(b"invalid")
+    model, = scanner.scan(tmp_path)
+    assert model.display_name == "bonsai-2"
+    assert model.metadata_name is None

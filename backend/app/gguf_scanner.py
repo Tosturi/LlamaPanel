@@ -259,7 +259,8 @@ def scan(directory: Path) -> list[ModelInfo]:
         ]
         models.append(ModelInfo(
             id=base,
-            display_name=meta.get("name") or base,
+            display_name=base,
+            metadata_name=meta.get("name"),
             entry_path=str(entry_path),
             parts=model_parts,
             total_size_bytes=sum(p.size_bytes for p in model_parts),
@@ -276,7 +277,8 @@ def scan(directory: Path) -> list[ModelInfo]:
         size = path.stat().st_size
         models.append(ModelInfo(
             id=path.stem,
-            display_name=meta.get("name") or path.stem,
+            display_name=path.stem,
+            metadata_name=meta.get("name"),
             entry_path=str(path),
             parts=[ModelPart(filename=path.name, path=str(path), size_bytes=size)],
             total_size_bytes=size,
