@@ -5,7 +5,15 @@ import { LogViewer } from "./components/LogViewer";
 import { ModelList } from "./components/ModelList";
 import { PresetBar } from "./components/PresetBar";
 import { ServerControls } from "./components/ServerControls";
-import type { BinaryInfo, FlagDef, FlagValues, LoraInfo, ModelInfo, Preset, StatusResponse } from "./types";
+import type {
+  BinaryInfo,
+  FlagDef,
+  FlagValues,
+  LoraInfo,
+  ModelInfo,
+  Preset,
+  StatusResponse,
+} from "./types";
 
 function defaultsFromSchema(schema: FlagDef[]): FlagValues {
   const values: FlagValues = {};
@@ -17,7 +25,9 @@ function defaultsFromSchema(schema: FlagDef[]): FlagValues {
  *  "llama.cpp build 6789 (a1b2c3d)" for ones that predate release versions. */
 function describeBuild(binary: BinaryInfo): string {
   const details = [
-    binary.version !== null && binary.build !== null ? `build ${binary.build}` : null,
+    binary.version !== null && binary.build !== null
+      ? `build ${binary.build}`
+      : null,
     binary.commit,
   ].filter(Boolean);
   const head = binary.version ?? `build ${binary.build ?? "?"}`;
@@ -25,6 +35,14 @@ function describeBuild(binary: BinaryInfo): string {
 }
 
 export default function App() {
+  const [page, setPage] = useState<"server" | "models" | "loras" | "presets">(
+    "server",
+  );
+  const [tab, setTab] = useState<"overview" | "configuration" | "logs">(
+    "overview",
+  );
+  const [search, setSearch] = useState("");
+  const [connectionError, setConnectionError] = useState(false);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loras, setLoras] = useState<LoraInfo[]>([]);
   const [schema, setSchema] = useState<FlagDef[]>([]);
@@ -35,12 +53,17 @@ export default function App() {
   const [syncedPid, setSyncedPid] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [modelsLoading, setModelsLoading] = useState(true);
-  const [actionPending, setActionPending] = useState<"start" | "stop" | "reload" | null>(null);
+  const [actionPending, setActionPending] = useState<
+    "start" | "stop" | "reload" | null
+  >(null);
   const [version, setVersion] = useState<string | null>(null);
   const [binary, setBinary] = useState<BinaryInfo | null>(null);
   // Flags of the last loaded preset that the installed llama-server
   // doesn't know; shown until the user dismisses or loads another preset.
-  const [unsupported, setUnsupported] = useState<{ preset: string; keys: string[] } | null>(null);
+  const [unsupported, setUnsupported] = useState<{
+    preset: string;
+    keys: string[];
+  } | null>(null);
   // Bumped whenever a user action (start/stop/reload/cancel) lands a fresh
   // status, so a poll that was already in flight can tell it is stale.
   const statusVersion = useRef(0);
@@ -50,22 +73,38 @@ export default function App() {
     setStatus(s);
   };
 
-  const loadModels = () => {
+  const loadModels = async () => {
     setModelsLoading(true);
-    // Same directory, same rescan button: adapters are refreshed with the models.
-    api.listLoras().then(setLoras).catch(() => {});
-    return api.listModels().then(setModels).catch((e) => setError(String(e))).finally(() => setModelsLoading(false));
+    const results = await Promise.allSettled([
+      api.listModels().then(setModels),
+      api.listLoras().then(setLoras),
+    ]);
+    const failures = results.filter((result) => result.status === "rejected");
+    if (failures.length) setError(failures.map((result) => String(result.reason)).join("; "));
+    setModelsLoading(false);
   };
 
   useEffect(() => {
     loadModels();
-    api.getHealth().then((h) => setVersion(h.version)).catch(() => {});
-    api.listPresets().then(setPresets).catch((e) => setError(String(e)));
-    api.getFlagSchema().then((s) => {
-      setSchema(s);
-      setValues(defaultsFromSchema(s));
-    }).catch((e) => setError(String(e)));
-    api.getBinaryInfo().then(setBinary).catch(() => {});
+    api
+      .getHealth()
+      .then((h) => setVersion(h.version))
+      .catch(() => {});
+    api
+      .listPresets()
+      .then(setPresets)
+      .catch((e) => setError(String(e)));
+    api
+      .getFlagSchema()
+      .then((s) => {
+        setSchema(s);
+        setValues(defaultsFromSchema(s));
+      })
+      .catch((e) => setError(String(e)));
+    api
+      .getBinaryInfo()
+      .then(setBinary)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -80,9 +119,14 @@ export default function App() {
           // that started before the user hit Start therefore lands *after*
           // the Start response and carries a stale "stopped" snapshot. Drop
           // it, or the UI flashes "stopped" and the sync below misfires.
-          if (!disposed && statusVersion.current === seen) setStatus(s);
+          if (!disposed && statusVersion.current === seen) {
+            setStatus(s);
+            setConnectionError(false);
+          }
         })
-        .catch(() => {});
+        .catch(() => {
+          if (!disposed) setConnectionError(true);
+        });
     };
     poll();
     const id = setInterval(poll, 5000);
@@ -128,7 +172,11 @@ export default function App() {
   const handleStop = () => {
     setError(null);
     setActionPending("stop");
-    api.stopServer().then(applyActionStatus).catch((e) => setError(String(e))).finally(() => setActionPending(null));
+    api
+      .stopServer()
+      .then(applyActionStatus)
+      .catch((e) => setError(String(e)))
+      .finally(() => setActionPending(null));
   };
 
   const handleReload = () => {
@@ -147,7 +195,10 @@ export default function App() {
 
   const handleCancelRestart = () => {
     setError(null);
-    api.cancelRestart().then(applyActionStatus).catch((e) => setError(String(e)));
+    api
+      .cancelRestart()
+      .then(applyActionStatus)
+      .catch((e) => setError(String(e)));
   };
 
   const handleSavePreset = (name: string) => {
@@ -155,14 +206,23 @@ export default function App() {
     setError(null);
     api
       .savePreset(name, selectedId, values)
-      .then((saved) => setPresets((prev) => [...prev.filter((p) => p.name !== saved.name), saved]))
+      .then((saved) =>
+        setPresets((prev) => [
+          ...prev.filter((p) => p.name !== saved.name),
+          saved,
+        ]),
+      )
       .catch((e) => setError(String(e)));
   };
 
   const handleLoadPreset = (preset: Preset) => {
     setSelectedId(preset.model_id);
     setValues({ ...defaultsFromSchema(schema), ...preset.flags });
-    setUnsupported(preset.unsupported.length > 0 ? { preset: preset.name, keys: preset.unsupported } : null);
+    setUnsupported(
+      preset.unsupported.length > 0
+        ? { preset: preset.name, keys: preset.unsupported }
+        : null,
+    );
   };
 
   const binaryNotice = (() => {
@@ -171,14 +231,18 @@ export default function App() {
       return (
         <div className="flags-notice warn">
           <span>
-            <strong>llama-server could not be probed</strong> ({binary.error}). The form below comes from a bundled
-            snapshot of <code>--help</code> and may not match your build.
+            <strong>llama-server could not be probed</strong> ({binary.error}).
+            The form below comes from a bundled snapshot of <code>--help</code>{" "}
+            and may not match your build.
           </span>
         </div>
       );
     }
     return (
-      <div className="muted binary-info" title={binary.resolved_path ?? undefined}>
+      <div
+        className="muted binary-info"
+        title={binary.resolved_path ?? undefined}
+      >
         {describeBuild(binary)} · {schema.length} flags
       </div>
     );
@@ -192,74 +256,411 @@ export default function App() {
       .catch((e) => setError(String(e)));
   };
 
+  const selectedModel = models.find((m) => m.id === selectedId);
+  const live = status?.state === "running" || status?.state === "starting";
+  const activeModel = models.find((m) => m.id === status?.model_id);
+  const changed =
+    live &&
+    (selectedId !== status?.model_id ||
+      schema.some(
+        (f) =>
+          JSON.stringify(values[f.key] ?? f.default ?? null) !==
+          JSON.stringify(status?.flags?.[f.key] ?? f.default ?? null),
+      ));
+  const configure = () => {
+    setPage("server");
+    setTab("configuration");
+  };
+  const filteredModels = models.filter((m) =>
+    `${m.display_name} ${m.architecture ?? ""} ${m.entry_path}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
+  const filteredLoras = loras.filter((l) =>
+    `${l.display_name} ${l.base_model ?? ""} ${l.path}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
+  const presetBar = (
+    <PresetBar
+      presets={presets}
+      canSave={selectedId !== null}
+      onLoad={(p) => {
+        handleLoadPreset(p);
+        configure();
+      }}
+      onSave={handleSavePreset}
+      onDelete={handleDeletePreset}
+    />
+  );
+
   return (
-    <div className="app">
-      <header>
-        <h1>
-          LlamaPanel {version && <span className="muted version">v{version}</span>}
-        </h1>
-      </header>
-
-      {error && <div className="error-banner">{error}</div>}
-
-      <div className="layout">
-        <section className="panel">
-          <div className="panel-header">
-            <h2>Models</h2>
-            <button className="icon-button" disabled={modelsLoading} onClick={loadModels} title="Rescan models directory">
-              {modelsLoading ? <span className="spinner" /> : "⟳"}
+    <div className="app studio">
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
+      <header className="app-header">
+        <div className="brand">
+          <span className="brand-mark">L/</span>LlamaPanel{" "}
+          <span className="muted version">{version && `v${version}`}</span>
+        </div>
+        <nav aria-label="Main navigation">
+          {(
+            [
+              ["server", "Servers"],
+              ["models", "Models"],
+              ["loras", "LoRA library"],
+              ["presets", "Presets"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              aria-current={page === key ? "page" : undefined}
+              className={page === key ? "chosen" : ""}
+              onClick={() => {
+                setPage(key);
+                setSearch("");
+              }}
+            >
+              {label}
             </button>
+          ))}
+        </nav>
+        <span className="muted workspace-label">Local workspace</span>
+      </header>
+      <main id="main-content">
+        {error && (
+          <div className="error-banner" role="alert">
+            {error}
+            <button onClick={() => setError(null)}>Dismiss</button>
           </div>
-          <ModelList models={models} loading={modelsLoading} selectedId={selectedId} onSelect={setSelectedId} />
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <h2>Flags</h2>
-            {binaryNotice && !binary?.error && binaryNotice}
+        )}
+        {connectionError && (
+          <div className="flags-notice warn" role="status">
+            Cannot reach the panel backend. Displayed status may be out of date.
           </div>
-          <PresetBar
-            presets={presets}
-            canSave={selectedId !== null}
-            onLoad={handleLoadPreset}
-            onSave={handleSavePreset}
-            onDelete={handleDeletePreset}
-          />
-          {binary?.error && binaryNotice}
-          {unsupported && (
-            <div className="flags-notice warn">
-              <span>
-                Preset <strong>{unsupported.preset}</strong> has flags this llama-server build doesn't know; they are kept
-                in the preset but won't be passed: <code>{unsupported.keys.join(", ")}</code>
-              </span>
-              <button className="link-button" onClick={() => setUnsupported(null)}>
-                dismiss
-              </button>
+        )}
+        {page === "server" && (
+          <>
+            <div className="page-heading">
+              <div>
+                <p className="eyebrow">Your workspace / Servers</p>
+                <h1>Local server</h1>
+                <p className="muted">
+                  {live
+                    ? (activeModel?.display_name ??
+                      status?.model_id ??
+                      "External model")
+                    : "Choose a model and make it your own."}
+                </p>
+              </div>
+              <span className="badge">1 instance</span>
             </div>
-          )}
-          <FlagsForm
-            schema={schema}
-            values={values}
-            onChange={handleFlagChange}
-            loras={loras}
-            modelArch={models.find((m) => m.id === selectedId)?.architecture ?? null}
-          />
-        </section>
-
-        <section className="panel wide">
-          <h2>Server</h2>
-          <ServerControls
-            status={status}
-            canStart={selectedId !== null}
-            pending={actionPending}
-            onStart={handleStart}
-            onStop={handleStop}
-            onReload={handleReload}
-            onCancelRestart={handleCancelRestart}
-          />
+            <section
+              className="panel server-summary"
+              aria-label="Server controls"
+            >
+              <ServerControls
+                status={status}
+                canStart={
+                  selectedId !== null && !connectionError && status !== null
+                }
+                pending={actionPending}
+                onStart={handleStart}
+                onStop={handleStop}
+                onReload={handleReload}
+                onCancelRestart={handleCancelRestart}
+              />
+              {changed && (
+                <p className="change-note" role="status">
+                  Configuration differs from the running server. Apply & restart
+                  to use these changes.
+                </p>
+              )}
+            </section>
+            <nav className="view-tabs" aria-label="Server views">
+              {(["overview", "configuration", "logs"] as const).map((key) => (
+                <button
+                  key={key}
+                  aria-current={tab === key ? "page" : undefined}
+                  className={tab === key ? "chosen" : ""}
+                  onClick={() => setTab(key)}
+                >
+                  {key}
+                </button>
+              ))}
+            </nav>
+            {tab === "overview" && (
+              <div className="overview-grid">
+                <section className="panel model-summary">
+                  <p className="eyebrow">
+                    {live ? "Running model" : "Launch configuration"}
+                  </p>
+                  <div className="model-symbol" aria-hidden="true">
+                    ◇
+                  </div>
+                  <h2>
+                    {(live
+                      ? (activeModel?.display_name ?? status?.model_id)
+                      : selectedModel?.display_name) ?? "No model selected"}
+                  </h2>
+                  <p className="muted">
+                    {live
+                      ? "The model currently served by this instance."
+                      : "Select a local GGUF model to prepare this instance."}
+                  </p>
+                  <button className="primary" onClick={configure}>
+                    {selectedId ? "Edit configuration" : "Choose a model"}
+                  </button>
+                </section>
+                <section className="panel">
+                  <p className="eyebrow">Instance details</p>
+                  <h2>At a glance</h2>
+                  <dl className="details-list">
+                    <div>
+                      <dt>State</dt>
+                      <dd>{status?.state ?? "Connecting…"}</dd>
+                    </div>
+                    <div>
+                      <dt>Process</dt>
+                      <dd>{status?.pid ?? "Not running"}</dd>
+                    </div>
+                    <div>
+                      <dt>Started</dt>
+                      <dd>
+                        {status?.started_at
+                          ? new Date(status.started_at * 1000).toLocaleString()
+                          : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Inference</dt>
+                      <dd>
+                        {!live
+                          ? "—"
+                          : status?.busy === true
+                            ? "Generating"
+                            : status?.busy === false
+                              ? "Idle"
+                              : "Unknown"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Configuration model</dt>
+                      <dd>
+                        {selectedModel?.display_name ??
+                          selectedId ??
+                          "Not selected"}
+                      </dd>
+                    </div>
+                  </dl>
+                  <button onClick={() => setTab("logs")}>
+                    Open live logs →
+                  </button>
+                </section>
+                <section className="panel environment">
+                  <div>
+                    <p className="eyebrow">Runtime</p>
+                    <h2>llama-server</h2>
+                    {binaryNotice ?? (
+                      <p className="muted">Runtime information unavailable.</p>
+                    )}
+                  </div>
+                  <code>
+                    {binary?.resolved_path ??
+                      binary?.server_bin ??
+                      "Binary path unavailable"}
+                  </code>
+                </section>
+              </div>
+            )}
+            <div hidden={tab !== "configuration"}>
+              <section className="panel">
+                <div className="panel-header">
+                  <div>
+                    <p className="eyebrow">Launch configuration</p>
+                    <h2>Model & presets</h2>
+                  </div>
+                </div>
+                <p className="muted">
+                  Changes are used on the next start or restart.
+                </p>
+                <label className="field-label">
+                  Model
+                  <select
+                    value={selectedId ?? ""}
+                    onChange={(e) => setSelectedId(e.target.value || null)}
+                  >
+                    <option value="">Select a model</option>
+                    {selectedId && !selectedModel && (
+                      <option value={selectedId}>
+                        {selectedId} (not in library)
+                      </option>
+                    )}
+                    {models.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.display_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {presetBar}
+              </section>
+              <section className="panel configuration-panel">
+                <div className="panel-header">
+                  <h2>Parameters & adapters</h2>
+                  {!binary?.error && binaryNotice}
+                </div>
+                {binary?.error && binaryNotice}
+                {unsupported && (
+                  <div className="flags-notice warn">
+                    <span>
+                      Preset <strong>{unsupported.preset}</strong> contains
+                      unsupported flags:{" "}
+                      <code>{unsupported.keys.join(", ")}</code>. These will not
+                      be passed to this build.
+                    </span>
+                    <button onClick={() => setUnsupported(null)}>
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+                <FlagsForm
+                  schema={schema}
+                  values={values}
+                  onChange={handleFlagChange}
+                  loras={loras}
+                  modelArch={selectedModel?.architecture ?? null}
+                />
+              </section>
+            </div>
+          </>
+        )}
+        {/* Keep the socket and log buffer alive while navigating. */}
+        <section
+          className="panel logs-panel"
+          hidden={page !== "server" || tab !== "logs"}
+        >
+          <div className="panel-header">
+            <h2>Live logs</h2>
+            <span className="muted">
+              Last 1,000 lines · scroll up to pause following
+            </span>
+          </div>
           <LogViewer />
         </section>
-      </div>
+        {(page === "models" || page === "loras") && (
+          <>
+            <div className="page-heading">
+              <div>
+                <p className="eyebrow">Local library</p>
+                <h1>{page === "models" ? "Models" : "LoRA adapters"}</h1>
+                <p className="muted">
+                  {page === "models"
+                    ? "Choose the foundation for your server."
+                    : "Browse adapters. Connect multiple LoRA and set their scales in server configuration."}
+                </p>
+              </div>
+              <button disabled={modelsLoading} onClick={loadModels}>
+                {modelsLoading ? "Scanning…" : "Rescan library"}
+              </button>
+            </div>
+            <label className="search-label">
+              Search {page === "models" ? "models" : "adapters"}
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Name, architecture or path"
+              />
+            </label>
+            {page === "models" ? (
+              <ModelList
+                models={filteredModels}
+                loading={modelsLoading}
+                selectedId={selectedId}
+                onSelect={(id) => {
+                  setSelectedId(id);
+                  configure();
+                }}
+              />
+            ) : modelsLoading ? (
+              <p className="muted">Scanning library…</p>
+            ) : (
+              <div className="library-grid">
+                {filteredLoras.map((l) => (
+                  <article className="panel" key={l.id}>
+                    <p className="eyebrow">
+                      LoRA · {(l.size_bytes / 1024 ** 2).toFixed(1)} MiB
+                    </p>
+                    <h2>{l.display_name}</h2>
+                    <p className="muted">
+                      {l.base_model ?? "Base model unknown"} ·{" "}
+                      {l.architecture ?? "Architecture unknown"}
+                    </p>
+                    <code className="file-path">{l.path}</code>
+                    <p className="muted">Compatibility not verified</p>
+                    <button onClick={configure}>Configure adapters →</button>
+                  </article>
+                ))}
+                {!filteredLoras.length && (
+                  <p className="muted">
+                    {search
+                      ? "No adapters match your search."
+                      : "No LoRA adapters found in the configured models directory or its loras subfolder."}
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        )}
+        {page === "presets" && (
+          <>
+            <div className="page-heading">
+              <div>
+                <p className="eyebrow">Reusable configurations</p>
+                <h1>Presets</h1>
+                <p className="muted">
+                  Save a model and its launch parameters for next time.
+                </p>
+              </div>
+            </div>
+            <section className="panel">
+              <h2>Manage presets</h2>
+              <p className="muted">
+                Save the current configuration, or load a preset to edit it
+                before starting.
+              </p>
+              {presetBar}
+            </section>
+            <div className="library-grid">
+              {presets.map((p) => (
+                <article className="panel" key={p.name}>
+                  <p className="eyebrow">Launch preset</p>
+                  <h2>{p.name}</h2>
+                  <p className="muted">
+                    {models.find((m) => m.id === p.model_id)?.display_name ??
+                      p.model_id}
+                  </p>
+                  <button
+                    onClick={() => {
+                      handleLoadPreset(p);
+                      configure();
+                    }}
+                  >
+                    Load configuration →
+                  </button>
+                </article>
+              ))}
+            </div>
+            {!presets.length && (
+              <p className="muted">
+                No presets yet. Choose a model and save your configuration.
+              </p>
+            )}
+          </>
+        )}
+      </main>
     </div>
   );
 }

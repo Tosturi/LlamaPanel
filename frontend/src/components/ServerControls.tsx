@@ -22,11 +22,15 @@ export function ServerControls({
   // response actually reflecting it (the backend may still be scanning the
   // models directory or spawning the process) - without it the buttons look
   // unresponsive for that stretch.
-  const transitioning = state === "starting" || state === "stopping" || pending !== null;
+  const transitioning =
+    state === "starting" ||
+    state === "stopping" ||
+    pending !== null ||
+    status === null;
   const running = state === "running" || state === "starting";
   const restartQueued = status?.restart_pending ?? false;
 
-  let badgeLabel: string = state;
+  let badgeLabel: string = status ? state : "connecting";
   if (pending === "start" && state !== "starting") badgeLabel = "starting";
   else if (pending === "stop" && state !== "stopping") badgeLabel = "stopping";
   else if (restartQueued) badgeLabel = "reload queued";
@@ -41,26 +45,50 @@ export function ServerControls({
         {running && (
           <span
             className={`badge inference-badge ${
-              status?.busy === true ? "inference-active" : status?.busy === false ? "inference-idle" : "inference-unknown"
+              status?.busy === true
+                ? "inference-active"
+                : status?.busy === false
+                  ? "inference-idle"
+                  : "inference-unknown"
             }`}
           >
             <span className="dot" />
-            {status?.busy === true ? "generating" : status?.busy === false ? "idle" : "inference: n/a"}
+            {status?.busy === true
+              ? "generating"
+              : status?.busy === false
+                ? "idle"
+                : "inference: n/a"}
           </span>
         )}
-        {status?.adopted && <span className="badge" title="Detected running outside this panel session">adopted</span>}
-        {status?.model_id && <span className="muted">model: {status.model_id}</span>}
+        {status?.adopted && (
+          <span
+            className="badge"
+            title="Detected running outside this panel session"
+          >
+            adopted
+          </span>
+        )}
+        {status?.model_id && (
+          <span className="muted">model: {status.model_id}</span>
+        )}
         {status?.pid && <span className="muted">pid: {status.pid}</span>}
         <div className="spacer" />
-        <button disabled={!canStart || running || transitioning} onClick={onStart}>
+        <button
+          disabled={!canStart || running || transitioning}
+          onClick={onStart}
+        >
           Start
         </button>
         <button
-          disabled={!running || transitioning}
+          disabled={!canStart || !running || transitioning}
           onClick={onReload}
           title="Apply the current flags by restarting llama-server"
         >
-          {pending === "reload" ? <span className="spinner" /> : "Reload"}
+          {pending === "reload" ? (
+            <span className="spinner" />
+          ) : (
+            "Apply & restart"
+          )}
         </button>
         <button disabled={!running || transitioning} onClick={onStop}>
           Stop
@@ -70,7 +98,8 @@ export function ServerControls({
       {restartQueued && (
         <div className="restart-banner">
           <span className="spinner" />
-          Идёт инференс — новые параметры будут применены (сервер перезапустится) сразу после его завершения.
+          Идёт инференс — новые параметры будут применены (сервер
+          перезапустится) сразу после его завершения.
           <button className="link-button" onClick={onCancelRestart}>
             Отменить
           </button>
