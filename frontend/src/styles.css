@@ -209,3 +209,22 @@ dt { color: var(--muted); } dd { margin: 0; text-align: right; overflow-wrap: an
 @media (max-width: 850px) { .app-header { flex-wrap: wrap; padding: 20px; gap: 16px; } .workspace-label { display: none; } main { padding: 24px; } .overview-grid { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { main { padding: 20px 16px; } .panel { padding: 20px; } .library-grid { grid-template-columns: 1fr; } .app-header nav { width: 100%; } .app-header nav button { padding: 9px 10px; } .page-heading { align-items: flex-start; flex-wrap: wrap; } h1 { font-size: 26px; } .flag-row { flex-wrap: wrap; } .flag-controls { width: 100%; } .flag-row input[type=text], .flag-row input[type=number], .flag-row select { width: 100%; } .lora-item { flex-wrap: wrap; } .lora-label { flex-basis: 100%; } .lora-meta { white-space: normal; } .help-tip-body { max-width: min(22rem, 75vw); } .restart-banner { flex-wrap: wrap; } .preset-bar > * { max-width: 100%; } .server-controls .spacer { display: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
+
+/* Inset a consistent chevron without replacing native select interaction. */
+.studio select:not([multiple]):not([size]) {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.5rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23a1adc0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px 16px;
+}
+@media (forced-colors: active) {
+  .studio select:not([multiple]):not([size]) {
+    appearance: auto;
+    -webkit-appearance: auto;
+    background-image: none;
+    padding-right: 12px;
+  }
+}
