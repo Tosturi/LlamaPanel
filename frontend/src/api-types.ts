@@ -416,6 +416,8 @@ export interface components {
              * @default false
              */
             is_split: boolean;
+            /** Metadata Name */
+            metadata_name: string | null;
             /** Parts */
             parts: components["schemas"]["ModelPart"][];
             /** Total Size Bytes */

@@ -2,7 +2,7 @@ import type { ModelInfo } from "../types";
 
 function formatSize(bytes: number): string {
   const gb = bytes / 1024 ** 3;
-  return `${gb.toFixed(1)} GB`;
+  return `${gb.toFixed(1)} GiB`;
 }
 
 export function ModelList({
@@ -26,7 +26,9 @@ export function ModelList({
 
   if (models.length === 0) {
     return (
-      <p className="muted">No models found. Check your search or the configured models directory.</p>
+      <p className="muted">
+        No models found. Check your search or the configured models directory.
+      </p>
     );
   }
 
@@ -61,6 +63,50 @@ export function ModelList({
             </div>
             <span className="model-cta">Configure server →</span>
           </button>
+          <details className="model-details">
+            <summary>Metadata & files</summary>
+            <dl className="details-list">
+              <div>
+                <dt>Metadata name (general.name)</dt>
+                <dd>{m.metadata_name || "Not available"}</dd>
+              </div>
+              <div>
+                <dt>Architecture</dt>
+                <dd>{m.architecture ?? "Not available"}</dd>
+              </div>
+              <div>
+                <dt>Quantization</dt>
+                <dd>{m.file_type ?? "Not available"}</dd>
+              </div>
+              <div>
+                <dt>Context length</dt>
+                <dd>{m.context_length ?? "Not available"}</dd>
+              </div>
+              <div>
+                <dt>Total file size</dt>
+                <dd>{formatSize(m.total_size_bytes)}</dd>
+              </div>
+            </dl>
+            <p className="muted">
+              Metadata is read from the{" "}
+              {m.is_split ? "first part" : "GGUF header"}; values may be missing
+              or inaccurate.
+            </p>
+            <p className="muted">Entry file</p>
+            <code className="file-path">{m.entry_path}</code>
+            {m.is_split && (
+              <>
+                <p className="muted">Parts ({m.parts.length})</p>
+                <ul>
+                  {m.parts.map((part) => (
+                    <li key={part.path}>
+                      <code>{part.filename}</code>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </details>
         </li>
       ))}
     </ul>

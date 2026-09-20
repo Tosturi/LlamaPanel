@@ -228,3 +228,13 @@ dt { color: var(--muted); } dd { margin: 0; text-align: right; overflow-wrap: an
     padding-right: 12px;
   }
 }
+
+/* Metadata expands independently of the model selection button. */
+.model-select { height: auto; }
+.model-details { margin: 0 24px 20px; border-top: 1px solid var(--border); }
+.model-details summary { cursor: pointer; padding: 14px 0; color: var(--accent); }
+.model-details .details-list { margin: 0 0 16px; }
+.model-details dt { flex: 1; }
+.model-details dd { flex: 1; }
+.model-details code { overflow-wrap: anywhere; }
+.model-details ul { padding-left: 20px; }

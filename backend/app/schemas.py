@@ -19,6 +19,7 @@ class ModelPart(ResponseModel):
 
 
 class ModelInfo(ResponseModel):
+    metadata_name: Optional[str] = None  # general.name; never used as the file label
     id: str  # stable id: base name (without split suffix)
     display_name: str
     entry_path: str  # path to pass to llama-server (first part, or the file itself)
