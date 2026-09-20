@@ -80,7 +80,8 @@ export default function App() {
       api.listLoras().then(setLoras),
     ]);
     const failures = results.filter((result) => result.status === "rejected");
-    if (failures.length) setError(failures.map((result) => String(result.reason)).join("; "));
+    if (failures.length)
+      setError(failures.map((result) => String(result.reason)).join("; "));
     setModelsLoading(false);
   };
 
@@ -203,6 +204,13 @@ export default function App() {
 
   const handleSavePreset = (name: string) => {
     if (!selectedId) return;
+    if (
+      presets.some((preset) => preset.name === name) &&
+      !window.confirm(
+        `Replace preset “${name}” with the current configuration?`,
+      )
+    )
+      return;
     setError(null);
     api
       .savePreset(name, selectedId, values)
@@ -249,6 +257,8 @@ export default function App() {
   })();
 
   const handleDeletePreset = (name: string) => {
+    if (!window.confirm(`Delete preset “${name}”? This cannot be undone.`))
+      return;
     setError(null);
     api
       .deletePreset(name)
@@ -290,7 +300,6 @@ export default function App() {
         configure();
       }}
       onSave={handleSavePreset}
-      onDelete={handleDeletePreset}
     />
   );
 
@@ -649,6 +658,14 @@ export default function App() {
                     }}
                   >
                     Load configuration →
+                  </button>
+                  <button
+                    type="button"
+                    className="danger-button"
+                    aria-label={`Delete preset ${p.name}`}
+                    onClick={() => handleDeletePreset(p.name)}
+                  >
+                    Delete preset…
                   </button>
                 </article>
               ))}
