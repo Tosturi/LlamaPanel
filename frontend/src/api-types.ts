@@ -20,6 +20,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/instances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Instances */
+        get: operations["list_instances_api_instances_get"];
+        put?: never;
+        /** Create Instance */
+        post: operations["create_instance_api_instances_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/instances/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Instance */
+        put: operations["update_instance_api_instances__id__put"];
+        post?: never;
+        /** Delete Instance */
+        delete: operations["delete_instance_api_instances__id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/loras": {
         parameters: {
             query?: never;
@@ -145,12 +181,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Restart Server
-         * @description Apply new flags to the running server. Restarts immediately if it's
-         *     idle; if llama-server reports an in-flight generation (via /slots), the
-         *     restart is queued and applied automatically as soon as it finishes.
-         */
+        /** Restart Server */
         post: operations["restart_server_api_server_restart_post"];
         delete?: never;
         options?: never;
@@ -325,6 +356,38 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** InstanceConfig */
+        InstanceConfig: {
+            /** Flags */
+            flags?: {
+                [key: string]: boolean | number | string | (boolean | number | string | null)[] | null;
+            };
+            /** Model Id */
+            model_id?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Port
+             * @default 8080
+             */
+            port: number;
+        };
+        /** InstanceView */
+        InstanceView: {
+            /** Flags */
+            flags: {
+                [key: string]: boolean | number | string | (boolean | number | string | null)[] | null;
+            };
+            /** Id */
+            id: string;
+            /** Model Id */
+            model_id: string | null;
+            /** Name */
+            name: string;
+            /** Port */
+            port: number;
+            status: components["schemas"]["StatusResponse"];
         };
         /**
          * LlamaArg
@@ -550,6 +613,125 @@ export interface operations {
             };
         };
     };
+    list_instances_api_instances_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceView"][];
+                };
+            };
+        };
+    };
+    create_instance_api_instances_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstanceConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_instance_api_instances__id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstanceConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_instance_api_instances__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_loras_api_loras_get: {
         parameters: {
             query?: never;
@@ -729,7 +911,9 @@ export interface operations {
     };
     restart_server_api_server_restart_post: {
         parameters: {
-            query?: never;
+            query?: {
+                instance_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -762,7 +946,9 @@ export interface operations {
     };
     cancel_restart_api_server_restart_cancel_post: {
         parameters: {
-            query?: never;
+            query?: {
+                instance_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -778,11 +964,22 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     start_server_api_server_start_post: {
         parameters: {
-            query?: never;
+            query?: {
+                instance_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -815,7 +1012,9 @@ export interface operations {
     };
     get_status_api_server_status_get: {
         parameters: {
-            query?: never;
+            query?: {
+                instance_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -831,11 +1030,22 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     stop_server_api_server_stop_post: {
         parameters: {
-            query?: never;
+            query?: {
+                instance_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -849,6 +1059,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

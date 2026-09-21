@@ -10,8 +10,8 @@ from app.flags import FlagCatalog
 from app.introspection import BinaryInspector
 from app.llama_client import LlamaClient
 from app.presets import PresetStore
-from app.process_manager import ProcessManager
-from app.routers import models, presets, server
+from app.routers import models, presets, server, instances
+from app.instances import InstanceRegistry
 from app.schemas import HealthResponse
 from app.settings import Settings
 
@@ -40,17 +40,19 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         # presets an older release wrote next to run.py instead of showing
         # an empty list. No-op once data_dir has its own presets.json.
         app.state.presets.adopt_legacy_file(settings.legacy_presets_files)
-        app.state.manager = ProcessManager(settings, client)
+        app.state.instances = InstanceRegistry(settings, client)
+        app.state.manager = app.state.instances.managers["default"]
         try:
             yield
         finally:
-            await app.state.manager.shutdown()
+            await app.state.instances.shutdown()
             await client.aclose()
 
     app = FastAPI(title="LlamaPanel", version=__version__, lifespan=lifespan)
 
     app.include_router(models.router)
     app.include_router(server.router)
+    app.include_router(instances.router)
     app.include_router(presets.router)
 
     @app.get("/api/health", response_model=HealthResponse)

@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { api } from "./api";
+import { useEffect, useRef, useState, useMemo } from "react";
+import { instanceApi, instancesApi } from "./api";
+import { InstancesHome } from "./components/InstancesHome";
+import type { InstanceView } from "./types";
 import { FlagsForm } from "./components/FlagsForm";
 import { LogViewer } from "./components/LogViewer";
 import { ModelList } from "./components/ModelList";
@@ -28,7 +30,15 @@ function describeBuild(binary: BinaryInfo): string {
   return `llama.cpp ${head}${details.length ? ` (${details.join(", ")})` : ""}`;
 }
 
-export default function App() {
+function ServerWorkspace({
+  instance,
+  onBack,
+}: {
+  instance: InstanceView;
+  onBack: () => void;
+}) {
+  const api = useMemo(() => instanceApi(instance.id), [instance.id]);
+  const [saveMessage, setSaveMessage] = useState("");
   const [page, setPage] = useState<"server" | "models" | "loras" | "presets">(
     "server",
   );
@@ -41,8 +51,10 @@ export default function App() {
   const [loras, setLoras] = useState<LoraInfo[]>([]);
   const [schema, setSchema] = useState<FlagDef[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [values, setValues] = useState<FlagValues>({});
+  const [selectedId, setSelectedId] = useState<string | null>(
+    instance.model_id,
+  );
+  const [values, setValues] = useState<FlagValues>(instance.flags);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [syncedPid, setSyncedPid] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -141,8 +153,13 @@ export default function App() {
     const isLive = status.state === "running" || status.state === "starting";
     if (!isLive || status.pid === null || status.pid === syncedPid) return;
     setSyncedPid(status.pid);
+    if (instance.model_id) return; // Keep a saved draft distinct from running flags.
     if (status.model_id) setSelectedId(status.model_id);
-    setValues({ ...(status.flags ?? {}) });
+    setValues(
+      Object.fromEntries(
+        Object.entries(status.flags ?? {}).filter(([key]) => key !== "port"),
+      ),
+    );
   }, [status, schema, syncedPid]);
 
   const handleFlagChange = (key: string, value: unknown) => {
@@ -229,7 +246,11 @@ export default function App() {
 
   const handleLoadPreset = (preset: Preset) => {
     setSelectedId(preset.model_id);
-    setValues({ ...preset.flags });
+    setValues(
+      Object.fromEntries(
+        Object.entries(preset.flags).filter(([key]) => key !== "port"),
+      ),
+    );
     setUnsupported(
       preset.unsupported.length > 0
         ? { preset: preset.name, keys: preset.unsupported }
@@ -331,6 +352,10 @@ export default function App() {
               aria-current={page === key ? "page" : undefined}
               className={page === key ? "chosen" : ""}
               onClick={() => {
+                if (key === "server") {
+                  onBack();
+                  return;
+                }
                 setPage(key);
                 setSearch("");
               }}
@@ -358,7 +383,7 @@ export default function App() {
             <div className="page-heading">
               <div>
                 <p className="eyebrow">Your workspace / Servers</p>
-                <h1>Local server</h1>
+                <h1>{instance.name}</h1>
                 <p className="muted">
                   {live
                     ? (activeModel?.display_name ??
@@ -367,7 +392,32 @@ export default function App() {
                     : "Choose a model and make it your own."}
                 </p>
               </div>
-              <span className="badge">1 instance</span>
+              <span className="badge">Port {instance.port}</span>
+            </div>
+            <div className="instance-toolbar">
+              <button onClick={onBack}>← All servers</button>
+              <span className="muted">
+                Port {instance.port} is reserved for this instance.
+              </span>
+              <button
+                onClick={() => {
+                  setSaveMessage("");
+                  instancesApi
+                    .update(instance.id, {
+                      name: instance.name,
+                      port: instance.port,
+                      model_id: selectedId,
+                      flags: values,
+                    })
+                    .then(() => setSaveMessage("Configuration saved"))
+                    .catch((e) => setError(String(e)));
+                }}
+              >
+                Save configuration
+              </button>
+              <span role="status" className="muted">
+                {saveMessage}
+              </span>
             </div>
             <section
               className="panel server-summary"
@@ -561,7 +611,7 @@ export default function App() {
               Last 1,000 lines · scroll up to pause following
             </span>
           </div>
-          <LogViewer />
+          <LogViewer socketUrl={api.logsSocketUrl()} />
         </section>
         {(page === "models" || page === "loras") && (
           <>
@@ -684,5 +734,61 @@ export default function App() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function App() {
+  const [instances, setInstances] = useState<InstanceView[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [visited, setVisited] = useState<string[]>([]);
+  const [error, setError] = useState("");
+  const refresh = () =>
+    instancesApi
+      .list()
+      .then((rows) => {
+        setInstances(rows);
+        setSelected((id) =>
+          id && !rows.some((row) => row.id === id) ? null : id,
+        );
+        setError("");
+      })
+      .catch((e) => setError(String(e)));
+  useEffect(() => {
+    refresh();
+    const timer = setInterval(refresh, 5000);
+    return () => clearInterval(timer);
+  }, []);
+  const open = (id: string) => {
+    setVisited((ids) => (ids.includes(id) ? ids : [...ids, id]));
+    setSelected(id);
+  };
+  return (
+    <>
+      {error && (
+        <div role="alert" className="error-banner">
+          {error}
+        </div>
+      )}
+      {selected === null && (
+        <InstancesHome
+          instances={instances}
+          onOpen={open}
+          onRefresh={refresh}
+        />
+      )}
+      {instances
+        .filter((item) => visited.includes(item.id))
+        .map((item) => (
+          <div key={item.id} hidden={selected !== item.id}>
+            <ServerWorkspace
+              instance={item}
+              onBack={() => {
+                setSelected(null);
+                refresh();
+              }}
+            />
+          </div>
+        ))}
+    </>
   );
 }

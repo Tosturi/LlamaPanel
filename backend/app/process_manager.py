@@ -39,6 +39,8 @@ class ProcessManager:
         self._client = client
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._pid: Optional[int] = None
+        self._process_created_at: Optional[float] = None
+        self.on_started = lambda: None
         self._adopted = False
         self._state: ServerState = "stopped"
         self._model_id: Optional[str] = None
@@ -153,6 +155,11 @@ class ProcessManager:
 
             self._pid = self._proc.pid
             self._started_at = time.time()
+            try:
+                self._process_created_at = psutil.Process(self._pid).create_time()
+            except psutil.Error:
+                self._process_created_at = None
+            self.on_started()
 
             self._start_tail(start_at=tail_from)
             self._watch_task = asyncio.create_task(self._watch_exit(self._proc))
@@ -196,6 +203,10 @@ class ProcessManager:
             return
         self._proc = None
         self._pid = pid
+        try:
+            self._process_created_at = psutil.Process(pid).create_time()
+        except psutil.Error:
+            self._process_created_at = None
         self._adopted = True
         self._model_id = model_id
         self._args = []
@@ -206,6 +217,7 @@ class ProcessManager:
         self._emit(f"[adopted already-running llama-server, pid={pid}]")
         self._start_tail(start_at=0)
         self._watch_task = asyncio.create_task(self._watch_adopted())
+        self.on_started()
 
     async def _tail_log_file(self, start_at: int) -> None:
         path = self._settings.log_file
@@ -238,7 +250,12 @@ class ProcessManager:
 
     async def _watch_adopted(self) -> None:
         while self._adopted and self._state == "running":
-            if not psutil.pid_exists(self._pid):
+            try:
+                proc = psutil.Process(self._pid)
+                same_process = self._process_created_at is None or proc.create_time() == self._process_created_at
+            except psutil.Error:
+                same_process = False
+            if not same_process:
                 self._state = "stopped" if self._stop_requested else "crashed"
                 self._emit(f"[adopted process pid={self._pid} is gone]")
                 return
@@ -255,7 +272,7 @@ class ProcessManager:
             self._retry_task = _cancel(self._retry_task)
 
             if self._adopted:
-                await asyncio.to_thread(_terminate_pid, self._pid, timeout)
+                await asyncio.to_thread(_terminate_pid, self._pid, timeout, self._process_created_at)
                 self._state = "stopped"
                 self._adopted = False
                 return
@@ -422,13 +439,15 @@ def _port_is_free(host: str, port: int) -> bool:
         return False
 
 
-def _terminate_pid(pid: Optional[int], timeout: float) -> None:
+def _terminate_pid(pid: Optional[int], timeout: float, created_at: Optional[float] = None) -> None:
     """Blocking terminate-then-kill for a process we don't own a handle to.
     Runs in a worker thread so psutil's wait() doesn't stall the loop."""
     if pid is None:
         return
     try:
         p = psutil.Process(pid)
+        if created_at is not None and p.create_time() != created_at:
+            return
         p.terminate()
         p.wait(timeout=timeout)
     except psutil.NoSuchProcess:

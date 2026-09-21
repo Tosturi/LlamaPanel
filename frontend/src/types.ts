@@ -22,3 +22,6 @@ export type DeletedResponse = Schemas["DeletedResponse"];
 export type BinaryInfo = Schemas["BinaryInfo"];
 
 export type FlagValues = StartRequest["flags"];
+
+export type InstanceView = Schemas["InstanceView"];
+export type InstanceConfig = Schemas["InstanceConfig"];

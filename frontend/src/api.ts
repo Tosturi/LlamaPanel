@@ -10,6 +10,8 @@ import type {
   RestartResponse,
   StartRequest,
   StatusResponse,
+  InstanceView,
+  InstanceConfig,
 } from "./types";
 
 // Relative to the current origin: works both in Vite dev (proxied, see
@@ -36,17 +38,22 @@ function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export const api = {
-  getHealth: () => fetch(`${BASE}/api/health`).then((r) => json<HealthResponse>(r)),
+  getHealth: () =>
+    fetch(`${BASE}/api/health`).then((r) => json<HealthResponse>(r)),
 
-  listModels: () => fetch(`${BASE}/api/models`).then((r) => json<ModelInfo[]>(r)),
+  listModels: () =>
+    fetch(`${BASE}/api/models`).then((r) => json<ModelInfo[]>(r)),
 
   listLoras: () => fetch(`${BASE}/api/loras`).then((r) => json<LoraInfo[]>(r)),
 
-  getFlagSchema: () => fetch(`${BASE}/api/server/flags`).then((r) => json<FlagDef[]>(r)),
+  getFlagSchema: () =>
+    fetch(`${BASE}/api/server/flags`).then((r) => json<FlagDef[]>(r)),
 
-  getBinaryInfo: () => fetch(`${BASE}/api/server/binary`).then((r) => json<BinaryInfo>(r)),
+  getBinaryInfo: () =>
+    fetch(`${BASE}/api/server/binary`).then((r) => json<BinaryInfo>(r)),
 
-  getStatus: () => fetch(`${BASE}/api/server/status`).then((r) => json<StatusResponse>(r)),
+  getStatus: () =>
+    fetch(`${BASE}/api/server/status`).then((r) => json<StatusResponse>(r)),
 
   startServer: (modelId: string, flags: FlagValues) => {
     const body: StartRequest = { model_id: modelId, flags };
@@ -62,7 +69,8 @@ export const api = {
 
   cancelRestart: () => post<StatusResponse>("/api/server/restart/cancel"),
 
-  listPresets: () => fetch(`${BASE}/api/presets`).then((r) => json<Preset[]>(r)),
+  listPresets: () =>
+    fetch(`${BASE}/api/presets`).then((r) => json<Preset[]>(r)),
 
   savePreset: (name: string, modelId: string, flags: FlagValues) => {
     // `unsupported` is computed by the server on read and ignored on input.
@@ -75,12 +83,49 @@ export const api = {
   },
 
   deletePreset: (name: string) =>
-    fetch(`${BASE}/api/presets/${encodeURIComponent(name)}`, { method: "DELETE" }).then((r) =>
-      json<DeletedResponse>(r),
-    ),
+    fetch(`${BASE}/api/presets/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    }).then((r) => json<DeletedResponse>(r)),
 
   logsSocketUrl: () => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     return `${proto}://${window.location.host}/api/server/logs`;
   },
 };
+
+export const instancesApi = {
+  list: () => fetch("/api/instances").then((r) => json<InstanceView[]>(r)),
+  create: (config: InstanceConfig) =>
+    post<InstanceView>("/api/instances", config),
+  update: (id: string, config: InstanceConfig) =>
+    fetch(`/api/instances/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    }).then((r) => json<InstanceView>(r)),
+  remove: (id: string) =>
+    fetch(`/api/instances/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }).then((r) => json<DeletedResponse>(r)),
+};
+
+export function instanceApi(id: string) {
+  const scope = `?instance_id=${encodeURIComponent(id)}`;
+  return {
+    ...api,
+    getFlagSchema: () =>
+      api
+        .getFlagSchema()
+        .then((flags) => flags.filter((f) => f.key !== "port")),
+    getStatus: () =>
+      fetch(`/api/server/status${scope}`).then((r) => json<StatusResponse>(r)),
+    startServer: (model_id: string, flags: FlagValues) =>
+      post<StatusResponse>(`/api/server/start${scope}`, { model_id, flags }),
+    stopServer: () => post<StatusResponse>(`/api/server/stop${scope}`),
+    restartServer: (model_id: string, flags: FlagValues) =>
+      post<RestartResponse>(`/api/server/restart${scope}`, { model_id, flags }),
+    cancelRestart: () =>
+      post<StatusResponse>(`/api/server/restart/cancel${scope}`),
+    logsSocketUrl: () => api.logsSocketUrl() + scope,
+  };
+}
