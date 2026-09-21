@@ -352,7 +352,7 @@ function ServerWorkspace({
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <header className="app-header">
+      <header className="app-header workspace-header">
         <div className="brand">
           <span className="brand-mark">L/</span>LlamaPanel{" "}
           <span className="muted version">{version && `v${version}`}</span>
@@ -383,8 +383,10 @@ function ServerWorkspace({
             </button>
           ))}
         </nav>
-        <span className="muted workspace-label">Local workspace</span>
-        <button className="settings-button" onClick={onSettings}>⚙ Settings</button>
+        <div className="header-actions">
+          <span className="muted workspace-label">Local workspace</span>
+          <button className="settings-button" onClick={onSettings}>⚙ Settings</button>
+        </div>
       </header>
       <main id="main-content">
         <div className="instance-toolbar">

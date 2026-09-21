@@ -71,10 +71,6 @@ export function InstancesHome({
         <button className="settings-button" onClick={onSettings}>⚙ Settings</button>
       </header>
       <main>
-        {needsSetup && <div className="flags-notice">
-          <span>Choose your model and LoRA directories and llama-server executable to get started.</span>
-          <button onClick={onSettings}>Set up LlamaPanel</button>
-        </div>}
         <div className="page-heading">
           <div>
             <p className="eyebrow">Your workspace</p>
@@ -97,6 +93,15 @@ export function InstancesHome({
             Create server
           </button>
         </div>
+        {needsSetup && (
+          <section className="panel setup-card" aria-labelledby="setup-title">
+            <div>
+              <h2 id="setup-title">Complete setup</h2>
+              <p className="muted">Set the model folder, LoRA folder and llama-server path.</p>
+            </div>
+            <button onClick={onSettings}>Open Settings →</button>
+          </section>
+        )}
         {error && (
           <div role="alert" className="error-banner">
             {error}
