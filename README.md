@@ -1,33 +1,33 @@
 # LlamaPanel
 
-## Что это
+## About
 
-LlamaPanel — веб-панель для управления локальными экземплярами `llama-server`
-из llama.cpp: выбор GGUF-моделей и LoRA, настройка флагов, пресеты, запуск,
-остановка, перезапуск и просмотр логов. Можно одновременно запускать несколько
-серверов на разных портах.
+LlamaPanel is a web panel for managing local `llama-server` instances from
+llama.cpp: select GGUF models and LoRA adapters, configure flags, manage presets,
+start, stop and restart servers, and view logs. Multiple servers can run at the
+same time on different ports.
 
-Панель работает на той же машине, где находятся модели и бинарник `llama-server`.
-Внешние клиенты обращаются напрямую к OpenAI-совместимому API нужного экземпляра.
-Подробная документация и HLD находятся в [docs](docs/README.md).
+The panel runs on the machine containing your models and `llama-server` binary.
+External clients connect directly to each instance's OpenAI-compatible API.
+Detailed documentation and architecture documents are in [docs](docs/README.md).
 
-## Установка и запуск
+## Installation and startup
 
-Нужны **Python 3.12+**, установленный `llama-server` и GGUF-модель.
-Для сборки из исходников дополнительно нужен **Node.js 20+**.
+You need **Python 3.12+**, a `llama-server` binary and a GGUF model.
+Building from source also requires **Node.js 20+**.
 
-### Из готового релиза
+### From a release
 
-Скачай и распакуй ZIP из [Releases](https://github.com/Tosturi/LlamaPanel/releases).
-Frontend уже собран; Node.js не нужен. Открой терминал в распакованной папке
-`LlamaPanel`, скопируй `config.example.ini` в `config.ini` и укажи в нём
-`models_dir` и `server_bin` — пути к моделям и бинарнику на этой машине.
+Download and extract the ZIP from [Releases](https://github.com/Tosturi/LlamaPanel/releases).
+The frontend is already built; Node.js is not required. Open a terminal in the
+extracted `LlamaPanel` directory, copy `config.example.ini` to `config.ini`, and
+set `models_dir` and `server_bin` to the paths on your machine.
 
 ```bash
 python run.py
 ```
 
-### Из исходников
+### From source
 
 ```bash
 git clone https://github.com/Tosturi/LlamaPanel.git
@@ -38,26 +38,27 @@ npm run build
 cd ..
 ```
 
-Скопируй `config.example.ini` в `config.ini`, настрой `models_dir` и `server_bin`,
-затем запусти:
+Copy `config.example.ini` to `config.ini`, set `models_dir` and `server_bin`,
+then run:
 
 ```bash
 python run.py
 ```
 
-При первом запуске скрипт создаёт `.venv` и устанавливает зависимости backend.
-Открой **http://127.0.0.1:8000**. Адрес и порт панели можно изменить в `config.ini`
-или через `python run.py --host 0.0.0.0 --port 8000`; порт панели и порты
-экземпляров `llama-server` должны различаться.
+On the first run, the launcher creates `.venv` and installs backend dependencies.
+Open **http://127.0.0.1:8000**. You can change the panel address and port in
+`config.ini` or with `python run.py --host 0.0.0.0 --port 8000`. The panel and
+each `llama-server` instance must use different ports.
 
-На странице **Servers** создай экземпляр с отдельным портом, выбери модель
-и нажми **Start**. Подробнее — в [руководстве по экземплярам](docs/instances.md).
+On **Servers**, create an instance with its own port. Click **Open server**,
+select a model and press **Start**. See the [instance guide](docs/instances.md)
+for navigation and quick controls.
 
-После обновления исходников повтори `npm ci` и `npm run build` в `frontend`,
-затем перезапусти панель. При обновлении из ZIP сохрани свой `config.ini`.
-Пресеты, конфигурации экземпляров и логи хранятся отдельно от папки установки;
-пути и параметры описаны в [документации](docs/configuration.md).
+After updating the source, run `npm ci` and `npm run build` in `frontend` again,
+then restart the panel. When updating from a ZIP, keep your `config.ini`.
+Presets, instance configurations and logs are stored separately from the
+installation directory; see [configuration and storage](docs/configuration.md).
 
-## Лицензия
+## License
 
 [MIT](LICENSE).

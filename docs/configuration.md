@@ -1,59 +1,57 @@
-# Конфигурация и хранение данных
+# Configuration and storage
 
-[Документация](README.md) · [Установка и запуск](../README.md)
+[Documentation](README.md) · [Installation and startup](../README.md)
 
-Вместо `config.ini` те же параметры можно передать разово через CLI-флаги
-(`--models-dir`, `--llama-bin`, `--host`, `--port`, `--data-dir`) — они всегда
-побеждают файл. Приоритет: **CLI-флаг > `config.ini` > переменная окружения >
-встроенный дефолт**. `config.ini` в `.gitignore` — свой путь к моделям туда
-пишешь один раз на машине и не таскаешь в git.
+Instead of editing `config.ini`, pass settings for a single run using CLI flags
+(`--models-dir`, `--llama-bin`, `--host`, `--port`, `--data-dir`). Precedence is
+**CLI flag > `config.ini` > environment variable > built-in default**.
+`config.ini` is ignored by Git, so machine-specific paths stay local.
 
-Первый запуск сам:
-1. создаёт venv в `./.venv` (используя тот Python, которым запущен `run.py`);
-2. переисполняет себя внутри этого venv;
-3. ставит туда зависимости backend'а (`pip install -r backend/requirements.txt`).
+On the first run, the launcher:
 
-На системный Python это ничего не ставит — только на его основе создаётся
-изолированный venv. Повторные запуски — быстрый no-op (venv и зависимости уже
-на месте). Открыть `http://<ip-этой-машины>:8000` (или `--host 0.0.0.0`, если
-нужен доступ не только с localhost).
+1. Creates `./.venv` using the Python interpreter running `run.py`.
+2. Re-executes itself inside that environment.
+3. Installs backend dependencies with `pip install -r backend/requirements.txt`.
 
-Если `models_dir` не задан, по умолчанию используется `models/` рядом с `run.py`
-(не относительно текущей директории). `data_dir` (пресеты, экземпляры и логи `llama-server`)
-по умолчанию — пользовательская директория **вне** папки установки, чтобы
-новая версия, распакованная в другое место, видела те же пресеты:
+Nothing is installed into the system Python environment. Later launches reuse
+the environment and dependencies. Open `http://127.0.0.1:8000`; use
+`--host 0.0.0.0` to allow connections from other machines, then connect to
+`http://<panel-machine-ip>:8000`.
 
-| ОС      | Путь                                                     |
-|---------|----------------------------------------------------------|
-| Windows | `%LOCALAPPDATA%\LlamaPanel`                              |
-| macOS   | `~/Library/Application Support/LlamaPanel`               |
-| Linux   | `$XDG_DATA_HOME/llamapanel` (обычно `~/.local/share/llamapanel`) |
+If `models_dir` is unset, it defaults to `models/` next to `run.py`, independent
+of the current working directory. The default `data_dir` for presets, instances
+and server logs is outside the installation directory, so extracting an update
+elsewhere retains access to the same data:
 
-Фактический путь печатается при старте `run.py`. Если в `data_dir` пресетов
-ещё нет, а в `data/` рядом с `run.py` (старое место) они есть — файл копируется
-туда при первом запуске.
+| OS | Path |
+|---|---|
+| Windows | `%LOCALAPPDATA%\LlamaPanel` |
+| macOS | `~/Library/Application Support/LlamaPanel` |
+| Linux | `$XDG_DATA_HOME/llamapanel` (usually `~/.local/share/llamapanel`) |
 
-### Хранение пресетов
+`run.py` prints the actual path at startup. If the data directory has no presets
+but the legacy `data/` directory next to `run.py` does, the preset file is copied
+to the new location on first launch.
 
-`presets.json` — версионированный документ (`{"version": N, "app_version": ...,
-"presets": [...]}`, см. `app/storage.py`). При обновлении формата файл
-мигрируется на лету, а перед этим сохраняется копия `presets.json.vN.bak`. Файл
-от более новой версии панели не перезаписывается — API вернёт понятную ошибку.
-Невалидный JSON откладывается в `presets.json.corrupt-<дата>`, а не затирается.
+## Preset storage
 
-Флаги в пресетах приводятся к текущей схеме при каждом чтении
-(`FlagCatalog.resolve` в `app/flags.py`): ключ ищется по любому написанию
-флага, которое знает установленный `llama-server` (`--n-gpu-layers` и
-`--gpu-layers` — один флаг), старый ключ вида `no_kv_offload` превращается в
-`kv_offload` с инверсией значения, изменившийся тип приводится автоматически.
-Ключи, которых текущая сборка не знает, сохраняются как есть и отдаются в поле
-`unsupported`, чтобы UI мог предупредить, а не молча выбросить. Для
-переименований, которые не покрываются псевдонимами, остаётся `FLAG_RENAMES`.
+`presets.json` is a versioned document (`{"version": N, "app_version": ...,
+"presets": [...]}`; see `backend/app/storage.py`). Format upgrades migrate it
+automatically after saving a `presets.json.vN.bak` backup. Files from a newer
+panel version are not overwritten; the API returns an explanatory error.
+Invalid JSON is moved to `presets.json.corrupt-<timestamp>` rather than discarded.
 
-Параметры можно задать и через переменные окружения вместо флагов:
+Preset flags are resolved against the current schema on every read
+(`FlagCatalog.resolve` in `backend/app/flags.py`). Keys can match any spelling
+known to the installed binary (`--n-gpu-layers` and `--gpu-layers` represent
+the same flag). Legacy keys such as `no_kv_offload` become `kv_offload` with
+an inverted value, and changed types are converted automatically. Unknown
+keys are retained and reported in `unsupported` so the UI can warn about them.
+`FLAG_RENAMES` handles renames that aliases do not cover.
+
+You can also configure settings through environment variables:
 `LLAMAPANEL_HOST`, `LLAMAPANEL_PORT`, `LLAMAPANEL_MODELS_DIR`,
 `LLAMAPANEL_SERVER_BIN`, `LLAMAPANEL_DATA_DIR`, `LLAMAPANEL_LOG_BUFFER_SIZE`.
-Старые имена `LLAMA_MODELS_DIR` и `LLAMA_SERVER_BIN` тоже работают.
+The older names `LLAMA_MODELS_DIR` and `LLAMA_SERVER_BIN` are still supported.
 
-Версия приложения хранится в файле `VERSION` и отдаётся в `GET /api/health`.
-
+The application version is stored in `VERSION` and returned by `GET /api/health`.
