@@ -66,6 +66,7 @@ jobs:
           mkdir -p "${stage}/backend" "${stage}/frontend"
 
           cp run.py VERSION README.md config.example.ini "${stage}/"
+          cp -r docs "${stage}/docs"
           [ -f LICENSE ] && cp LICENSE "${stage}/" || true
           cp backend/requirements.txt "${stage}/backend/"
           cp -r backend/app "${stage}/backend/app"
