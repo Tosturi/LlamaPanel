@@ -9,10 +9,9 @@ needs `npm run build` in frontend/ first.
 
 Configuration, in order of precedence (highest wins):
     1. CLI flags            python run.py --port 9000
-    2. config.ini            copy config.example.ini -> config.ini and edit
-    3. environment variables LLAMAPANEL_MODELS_DIR, LLAMAPANEL_SERVER_BIN, ...
-    4. built-in defaults     (models/ next to this file; state in the
-                              per-user data dir, see app/settings.py)
+    2. environment variables LLAMAPANEL_MODELS_DIR, LLAMAPANEL_SERVER_BIN, ...
+    3. settings.json         saved by Settings in the UI, in the data directory
+    4. settings.defaults.json (platform defaults shipped with the app)
 
 On first run, this also creates an isolated venv at ./.venv using whatever
 Python launched this script, re-launches itself inside it, and installs
@@ -21,8 +20,6 @@ it just re-execs into the existing venv and starts the server.
 """
 
 import argparse
-import configparser
-import dataclasses
 import os
 import subprocess
 import sys
@@ -31,7 +28,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 BACKEND = ROOT / "backend"
 VENV_DIR = ROOT / ".venv"
-CONFIG_FILE = ROOT / "config.ini"
 
 
 def venv_python() -> Path:
@@ -79,35 +75,6 @@ def ensure_dependencies() -> None:
         ])
 
 
-def load_config_file() -> dict:
-    """Read config.ini (if present) into a flat dict of the same keys used
-    by argparse below. Missing file / missing keys just mean "no override
-    from this layer" - callers still fall back to env vars / defaults.
-    """
-    if not CONFIG_FILE.exists():
-        return {}
-
-    parser = configparser.ConfigParser()
-    parser.read(CONFIG_FILE, encoding="utf-8")
-    values: dict = {}
-
-    def get(section: str, option: str):
-        return parser.get(section, option) if parser.has_section(section) and parser.has_option(section, option) else None
-
-    if (v := get("panel", "host")) is not None:
-        values["host"] = v
-    if (v := get("panel", "port")) is not None:
-        values["port"] = int(v)
-    if (v := get("llama", "models_dir")) is not None:
-        values["models_dir"] = v
-    if (v := get("llama", "server_bin")) is not None:
-        values["llama_bin"] = v
-    if (v := get("advanced", "data_dir")) is not None:
-        values["data_dir"] = v
-
-    return values
-
-
 def check_python_version() -> None:
     if sys.version_info < (3, 12):
         sys.exit(
@@ -122,22 +89,15 @@ def main() -> None:
     ensure_venv_and_reexec()  # from here on, sys.executable is ./.venv's python
     ensure_dependencies()
 
-    file_config = load_config_file()
-
     parser = argparse.ArgumentParser(description="Run the LlamaPanel server.")
     parser.add_argument("--host", default=None, help="Bind address for the panel itself (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=None, help="Port for the panel itself (default: 8000)")
     parser.add_argument("--models-dir", default=None, help="Directory to scan for .gguf files")
+    parser.add_argument("--loras-dir", default=None, help="Directory containing LoRA GGUF files")
     parser.add_argument("--llama-bin", default=None, help="Path to the llama-server binary")
     parser.add_argument("--data-dir", default=None, help="Where presets.json / llama-server.log are stored")
     parser.add_argument("--reload", action="store_true", help="Auto-reload on code changes (development only)")
     args = parser.parse_args()
-
-    host = args.host or file_config.get("host") or os.environ.get("LLAMAPANEL_HOST") or "127.0.0.1"
-    port = args.port or file_config.get("port") or int(os.environ.get("LLAMAPANEL_PORT", "8000"))
-
-    if not CONFIG_FILE.exists():
-        print("(no config.ini found - copy config.example.ini to set defaults; using CLI flags/env vars for now)", flush=True)
 
     sys.path.insert(0, str(BACKEND))
     import uvicorn
@@ -145,18 +105,10 @@ def main() -> None:
     from app.main import create_app
     from app.settings import Settings
 
-    # Layer the config: env vars (with legacy aliases) first, then config.ini,
-    # then CLI flags on top. models_dir defaults next to this file, not the
-    # cwd; data_dir defaults to the per-user state directory so presets
-    # survive unpacking a new release into a different folder.
-    overrides = {}
-    if models_dir := (args.models_dir or file_config.get("models_dir")):
-        overrides["models_dir"] = Path(models_dir).resolve()
-    if llama_bin := (args.llama_bin or file_config.get("llama_bin")):
-        overrides["server_bin"] = llama_bin
-    if data_dir := (args.data_dir or file_config.get("data_dir")):
-        overrides["data_dir"] = Path(data_dir).resolve()
-    settings = dataclasses.replace(Settings.from_env(), **overrides)
+    settings = Settings.load({"host": args.host, "port": args.port,
+                              "models_dir": args.models_dir, "loras_dir": args.loras_dir,
+                              "server_bin": args.llama_bin, "data_dir": args.data_dir})
+    host, port = settings.host, settings.port
 
     if not (settings.frontend_dist / "index.html").exists():
         print(
@@ -175,7 +127,12 @@ def main() -> None:
         # --reload re-imports the app in a fresh process on every change, so
         # it needs an import string, not an object. Pass the resolved
         # settings through the environment for that child to pick up.
-        os.environ.update(settings.to_env())
+        # Forward only explicit CLI overrides; saved UI paths remain editable.
+        for key in ("models_dir", "loras_dir", "data_dir"):
+            if getattr(args, key) is not None:
+                os.environ["LLAMAPANEL_" + key.upper()] = str(getattr(settings, key))
+        if args.llama_bin is not None:
+            os.environ["LLAMAPANEL_SERVER_BIN"] = settings.server_bin
         uvicorn.run(
             "app.main:create_app", factory=True, host=host, port=port, reload=True,
             app_dir=str(BACKEND), timeout_graceful_shutdown=5,

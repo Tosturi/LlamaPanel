@@ -257,6 +257,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Settings */
+        get: operations["get_settings_api_settings_get"];
+        /** Save Settings */
+        put: operations["save_settings_api_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/browse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse */
+        get: operations["browse_api_settings_browse_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -283,6 +318,26 @@ export interface components {
             server_bin: string;
             /** Version */
             version: string | null;
+        };
+        /** BrowserEntry */
+        BrowserEntry: {
+            /** Directory */
+            directory: boolean;
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+        };
+        /** BrowserView */
+        BrowserView: {
+            /** Entries */
+            entries: components["schemas"]["BrowserEntry"][];
+            /** Parent */
+            parent: string | null;
+            /** Path */
+            path: string;
+            /** Roots */
+            roots: string[];
         };
         /** DeletedResponse */
         DeletedResponse: {
@@ -524,6 +579,30 @@ export interface components {
              */
             result: "applied" | "queued";
             status: components["schemas"]["StatusResponse"];
+        };
+        /** SettingsUpdate */
+        SettingsUpdate: {
+            /** Loras Dir */
+            loras_dir: string;
+            /** Models Dir */
+            models_dir: string;
+            /** Server Bin */
+            server_bin: string;
+        };
+        /** SettingsView */
+        SettingsView: {
+            /** Data Dir */
+            data_dir: string;
+            /** Locked Fields */
+            locked_fields: string[];
+            /** Loras Dir */
+            loras_dir: string;
+            /** Models Dir */
+            models_dir: string;
+            /** Needs Setup */
+            needs_setup: boolean;
+            /** Server Bin */
+            server_bin: string;
         };
         /** StartRequest */
         StartRequest: {
@@ -1059,6 +1138,91 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_settings_api_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsView"];
+                };
+            };
+        };
+    };
+    save_settings_api_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    browse_api_settings_browse_get: {
+        parameters: {
+            query?: {
+                mode?: "directory" | "file";
+                path?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserView"];
                 };
             };
             /** @description Validation Error */

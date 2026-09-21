@@ -2,10 +2,33 @@
 
 [Documentation](README.md) · [Installation and startup](../README.md)
 
-Instead of editing `config.ini`, pass settings for a single run using CLI flags
-(`--models-dir`, `--llama-bin`, `--host`, `--port`, `--data-dir`). Precedence is
-**CLI flag > `config.ini` > environment variable > built-in default**.
-`config.ini` is ignored by Git, so machine-specific paths stay local.
+Open **Settings** in the header to choose the models directory, a separate LoRA
+directory, and the `llama-server` executable. **Browse** lists folders and files
+on the backend machine, including drive roots on Windows. You can also enter
+an absolute path, including a network path accessible to the backend account.
+The browser never uploads files and does not create or delete them.
+
+**Save settings** validates the directories and executable, then writes
+`settings.json` beside presets and logs in the data directory. Libraries refresh
+without losing server drafts. The selected binary is used for future launches;
+running processes and already queued restarts retain their current configuration.
+Only change the binary to a trusted llama-server build: the panel executes it
+to inspect its version and supported flags.
+
+`settings.defaults.json` ships with platform defaults. Relative default folders
+resolve against the installation directory; Windows uses `llama-server.exe`,
+Linux and macOS use `llama-server`. If no full path is given, the binary is
+looked up in PATH. Default model folders are not created automatically.
+
+Precedence is **CLI flag > environment variable > saved settings.json >
+settings.defaults.json**. Fields overridden at launch are marked read-only in
+the UI. CLI options include `--models-dir`, `--loras-dir`, `--llama-bin`,
+`--host`, `--port`, and `--data-dir`. Select the data directory at launch;
+it is not moved by the Settings page. Host and port are also launch settings.
+
+`config.ini` is no longer read and is not migrated. After upgrading, select
+your paths once in Settings. Presets and instance configurations stay in place.
+Settings use the same versioned, atomic JSON storage as other panel data.
 
 On the first run, the launcher:
 
@@ -50,7 +73,7 @@ keys are retained and reported in `unsupported` so the UI can warn about them.
 `FLAG_RENAMES` handles renames that aliases do not cover.
 
 You can also configure settings through environment variables:
-`LLAMAPANEL_HOST`, `LLAMAPANEL_PORT`, `LLAMAPANEL_MODELS_DIR`,
+`LLAMAPANEL_HOST`, `LLAMAPANEL_PORT`, `LLAMAPANEL_MODELS_DIR`, `LLAMAPANEL_LORAS_DIR`,
 `LLAMAPANEL_SERVER_BIN`, `LLAMAPANEL_DATA_DIR`, `LLAMAPANEL_LOG_BUFFER_SIZE`.
 The older names `LLAMA_MODELS_DIR` and `LLAMA_SERVER_BIN` are still supported.
 

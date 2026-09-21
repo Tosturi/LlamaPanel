@@ -27,6 +27,7 @@ class InstanceRecord(InstanceConfig):
     created_at: float | None = None
     running_model_id: str | None = None
     running_flags: FlagValues = Field(default_factory=dict)
+    running_executable: str | None = None
 
 
 class InstanceView(ResponseModel):
@@ -64,8 +65,10 @@ class InstanceRegistry:
             try:
                 proc = psutil.Process(record.pid)
                 if (proc.create_time() == record.created_at and
-                        (_binary_key(proc.name()) == _binary_key(self.settings.server_bin) or
-                         Path(proc.exe()).resolve() == Path(self.settings.server_bin).resolve())):
+                        (Path(proc.exe()).resolve() == Path(record.running_executable).resolve()
+                         if record.running_executable else
+                         (_binary_key(proc.name()) == _binary_key(self.settings.server_bin) or
+                          Path(proc.exe()).resolve() == Path(self.settings.server_bin).resolve()))):
                     manager.adopt(record.pid, record.running_model_id, record.running_flags)
             except (psutil.Error, OSError):
                 pass
@@ -85,6 +88,11 @@ class InstanceRegistry:
         record.created_at = manager._process_created_at
         record.running_model_id = manager._model_id
         record.running_flags = dict(manager._flags)
+        if record.pid:
+            try:
+                record.running_executable = psutil.Process(record.pid).exe()
+            except psutil.Error:
+                pass
         self.save()
 
     def port_assigned(self, port, exclude=None):

@@ -243,4 +243,13 @@ dt { color: var(--muted); } dd { margin: 0; text-align: right; overflow-wrap: an
 .instance-toolbar { margin-bottom: 20px; }
 .instance-actions .danger-button { margin-left: 0; }
 .instance-actions + .instance-actions { margin-top: 12px; }
+.settings-form { display: grid; gap: 20px; }
+.settings-button { margin-left: auto; white-space: nowrap; }
+@media (max-width: 600px) { .app-header nav { order: 2; } }
+.settings-path-row { display: flex; gap: 12px; align-items: center; }
+.settings-path-row input { flex: 1; min-width: 0; }
+.settings-path-row button { flex-shrink: 0; }
+.browser-roots { margin: 16px 0; }
+.browser-entries { display: grid; max-height: 360px; overflow: auto; margin: 16px 0; gap: 6px; }
+.browser-entries button { text-align: left; overflow-wrap: anywhere; }
 .instance-form { margin-bottom: 24px; max-width: 640px; }

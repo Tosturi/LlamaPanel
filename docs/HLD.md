@@ -15,7 +15,8 @@ does not proxy inference requests.
 |---|---|
 | `run.py` | Prepare `.venv`, load configuration and start Uvicorn |
 | `backend/app/main.py` | FastAPI factory and application object lifecycle |
-| `backend/app/settings.py` | Immutable `Settings`; precedence: CLI → INI → environment → defaults |
+| `backend/app/settings.py` | Immutable `Settings`; precedence: CLI → environment → saved JSON → platform defaults |
+| `backend/app/routers/settings.py` | Global settings, path validation and read-only browsing of backend directories |
 | `backend/app/instances.py` | `InstanceRegistry`: configurations, port reservations and process recovery |
 | `backend/app/process_manager.py` | Per-instance `ProcessManager`: process, state, restart queue and logs |
 | `backend/app/llama_client.py` | HTTP checks of instance `/health` and `/slots` |

@@ -25,3 +25,6 @@ export type FlagValues = StartRequest["flags"];
 
 export type InstanceView = Schemas["InstanceView"];
 export type InstanceConfig = Schemas["InstanceConfig"];
+export type SettingsView = Schemas["SettingsView"];
+export type SettingsUpdate = Schemas["SettingsUpdate"];
+export type BrowserView = Schemas["BrowserView"];

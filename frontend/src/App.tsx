@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from "react";
-import { instanceApi, instancesApi } from "./api";
+import { api as globalApi, instanceApi, instancesApi } from "./api";
+import { SettingsPage } from "./components/SettingsPage";
 import { InstancesHome } from "./components/InstancesHome";
 import type { InstanceView } from "./types";
 import { FlagsForm } from "./components/FlagsForm";
@@ -34,10 +35,14 @@ function ServerWorkspace({
   instance,
   onBack,
   navigation,
+  onSettings,
+  settingsRevision,
 }: {
   instance: InstanceView;
   onBack: () => void;
   navigation: { id: string; view: "configuration" | "logs" } | null;
+  onSettings: () => void;
+  settingsRevision: number;
 }) {
   const api = useMemo(() => instanceApi(instance.id), [instance.id]);
   const [saveMessage, setSaveMessage] = useState("");
@@ -80,6 +85,7 @@ function ServerWorkspace({
   // Bumped whenever a user action (start/stop/reload/cancel) lands a fresh
   // status, so a poll that was already in flight can tell it is stale.
   const statusVersion = useRef(0);
+  const libraryVersion = useRef(0);
 
   const applyActionStatus = (s: StatusResponse) => {
     statusVersion.current += 1;
@@ -87,11 +93,15 @@ function ServerWorkspace({
   };
 
   const loadModels = async () => {
+    const version = ++libraryVersion.current;
     setModelsLoading(true);
     const results = await Promise.allSettled([
-      api.listModels().then(setModels),
-      api.listLoras().then(setLoras),
+      api.listModels(),
+      api.listLoras(),
     ]);
+    if (version !== libraryVersion.current) return;
+    if (results[0].status === "fulfilled") setModels(results[0].value);
+    if (results[1].status === "fulfilled") setLoras(results[1].value);
     const failures = results.filter((result) => result.status === "rejected");
     if (failures.length)
       setError(failures.map((result) => String(result.reason)).join("; "));
@@ -99,6 +109,7 @@ function ServerWorkspace({
   };
 
   useEffect(() => {
+    let active = true;
     loadModels();
     api
       .getHealth()
@@ -106,19 +117,20 @@ function ServerWorkspace({
       .catch(() => {});
     api
       .listPresets()
-      .then(setPresets)
-      .catch((e) => setError(String(e)));
+      .then((p) => { if (active) setPresets(p); })
+      .catch((e) => { if (active) setError(String(e)); });
     api
       .getFlagSchema()
       .then((s) => {
-        setSchema(s);
+        if (active) setSchema(s);
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => { if (active) setError(String(e)); });
     api
       .getBinaryInfo()
-      .then(setBinary)
+      .then((b) => { if (active) setBinary(b); })
       .catch(() => {});
-  }, []);
+    return () => { active = false; libraryVersion.current += 1; };
+  }, [settingsRevision]);
 
   useEffect(() => {
     let disposed = false;
@@ -372,6 +384,7 @@ function ServerWorkspace({
           ))}
         </nav>
         <span className="muted workspace-label">Local workspace</span>
+        <button className="settings-button" onClick={onSettings}>⚙ Settings</button>
       </header>
       <main id="main-content">
         <div className="instance-toolbar">
@@ -681,7 +694,7 @@ function ServerWorkspace({
                   <p className="muted">
                     {search
                       ? "No adapters match your search."
-                      : "No LoRA adapters found in the configured models directory or its loras subfolder."}
+                      : "No LoRA adapters found. Choose a LoRA directory in Settings."}
                   </p>
                 )}
               </div>
@@ -748,6 +761,12 @@ function ServerWorkspace({
 }
 
 export default function App() {
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsRevision, setSettingsRevision] = useState(0);
+  const [needsSetup, setNeedsSetup] = useState(false);
+  useEffect(() => {
+    globalApi.getSettings().then(s => setNeedsSetup(s.needs_setup)).catch(() => {});
+  }, []);
   const [instances, setInstances] = useState<InstanceView[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [navigation, setNavigation] = useState<{
@@ -785,6 +804,11 @@ export default function App() {
   };
   return (
     <>
+      {showSettings && <SettingsPage onBack={() => setShowSettings(false)} onSaved={s => {
+        setNeedsSetup(s.needs_setup);
+        setSettingsRevision(v => v + 1);
+      }} />}
+      <div hidden={showSettings}>
       {error && (
         <div role="alert" className="error-banner">
           {error}
@@ -795,6 +819,8 @@ export default function App() {
           instances={instances}
           onOpen={open}
           onRefresh={refresh}
+          onSettings={() => setShowSettings(true)}
+          needsSetup={needsSetup}
         />
       )}
       {instances
@@ -804,6 +830,8 @@ export default function App() {
             <ServerWorkspace
               instance={item}
               navigation={navigation}
+              onSettings={() => setShowSettings(true)}
+              settingsRevision={settingsRevision}
               onBack={() => {
                 setSelected(null);
                 refresh();
@@ -811,6 +839,7 @@ export default function App() {
             />
           </div>
         ))}
+      </div>
     </>
   );
 }

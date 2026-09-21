@@ -1,0 +1,12 @@
+{
+  "models_dir": "models",
+  "loras_dir": "models/loras",
+  "server_bin": "llama-server",
+  "host": "127.0.0.1",
+  "port": 8000,
+  "platforms": {
+    "win32": { "server_bin": "llama-server.exe" },
+    "darwin": {},
+    "linux": {}
+  }
+}

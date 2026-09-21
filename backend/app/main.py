@@ -11,6 +11,7 @@ from app.introspection import BinaryInspector
 from app.llama_client import LlamaClient
 from app.presets import PresetStore
 from app.routers import models, presets, server, instances
+from app.routers import settings as settings_router
 from app.instances import InstanceRegistry
 from app.schemas import HealthResponse
 from app.settings import Settings
@@ -54,6 +55,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.include_router(server.router)
     app.include_router(instances.router)
     app.include_router(presets.router)
+    app.include_router(settings_router.router)
 
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:

@@ -20,8 +20,7 @@ Building from source also requires **Node.js 20+**.
 
 Download and extract the ZIP from [Releases](https://github.com/Tosturi/LlamaPanel/releases).
 The frontend is already built; Node.js is not required. Open a terminal in the
-extracted `LlamaPanel` directory, copy `config.example.ini` to `config.ini`, and
-set `models_dir` and `server_bin` to the paths on your machine.
+extracted `LlamaPanel` directory and run:
 
 ```bash
 python run.py
@@ -38,16 +37,18 @@ npm run build
 cd ..
 ```
 
-Copy `config.example.ini` to `config.ini`, set `models_dir` and `server_bin`,
-then run:
+Then run:
 
 ```bash
 python run.py
 ```
 
 On the first run, the launcher creates `.venv` and installs backend dependencies.
-Open **http://127.0.0.1:8000**. You can change the panel address and port in
-`config.ini` or with `python run.py --host 0.0.0.0 --port 8000`. The panel and
+Open **http://127.0.0.1:8000**, click **Settings** in the header, and choose the
+model folder, LoRA folder and `llama-server` executable using **Browse** or by
+entering paths. Save settings; no configuration file editing is required.
+You can change the panel address and port with
+`python run.py --host 0.0.0.0 --port 8000`. The panel and
 each `llama-server` instance must use different ports.
 
 On **Servers**, create an instance with its own port. Click **Open server**,
@@ -55,8 +56,7 @@ select a model and press **Start**. See the [instance guide](docs/instances.md)
 for navigation and quick controls.
 
 After updating the source, run `npm ci` and `npm run build` in `frontend` again,
-then restart the panel. When updating from a ZIP, keep your `config.ini`.
-Presets, instance configurations and logs are stored separately from the
+then restart the panel. Settings, presets, instance configurations and logs are stored separately from the
 installation directory; see [configuration and storage](docs/configuration.md).
 
 ## License
