@@ -291,11 +291,19 @@ def scan(directory: Path) -> list[ModelInfo]:
     return sorted(models, key=lambda m: m.display_name.lower())
 
 
-def scan_loras(directory: Path) -> list[LoraInfo]:
+def scan_loras(directory: Path, loras_dir: Path | None = None) -> list[LoraInfo]:
     """LoRA adapters: any GGUF in `directory` whose header says
     general.type == "adapter", plus every GGUF in `directory`/loras (the
     header check is skipped there, so adapters converted before the type
     key existed still show up when the user files them in that folder)."""
+    if loras_dir is not None:
+        if not loras_dir.is_dir():
+            return []
+        paths = sorted(loras_dir.glob("*.gguf"))
+        metas = _read_all(paths)
+        return [LoraInfo(id=p.stem, display_name=p.stem, path=str(p),
+                         size_bytes=p.stat().st_size, architecture=metas[p].get("architecture"),
+                         base_model=metas[p].get("base_model") or metas[p].get("name")) for p in paths]
     if not directory.exists():
         return []
 

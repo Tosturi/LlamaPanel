@@ -65,7 +65,7 @@ jobs:
           stage="dist-release/LlamaPanel"
           mkdir -p "${stage}/backend" "${stage}/frontend"
 
-          cp run.py VERSION README.md config.example.ini "${stage}/"
+          cp run.py VERSION README.md settings.defaults.json "${stage}/"
           cp -r docs "${stage}/docs"
           [ -f LICENSE ] && cp LICENSE "${stage}/" || true
           cp backend/requirements.txt "${stage}/backend/"
@@ -101,9 +101,9 @@ jobs:
             echo
             echo '```bash'
             echo "unzip ${{ steps.zip.outputs.name }}.zip && cd LlamaPanel"
-            echo "cp config.example.ini config.ini   # set models_dir / server_bin"
             echo "python run.py"
             echo '```'
+            echo "Open the panel and choose model, LoRA and executable paths in Settings."
             echo
             echo "Requires Python 3.12+ on the target machine; the web UI is pre-built. See README for details."
             if [ -n "${previous}" ]; then

@@ -6,10 +6,14 @@ export function InstancesHome({
   instances,
   onOpen,
   onRefresh,
+  onSettings,
+  needsSetup,
 }: {
   instances: InstanceView[];
   onOpen: (id: string, view?: "configuration" | "logs") => void;
   onRefresh: () => Promise<void>;
+  onSettings: () => void;
+  needsSetup: boolean;
 }) {
   const [name, setName] = useState("");
   const [port, setPort] = useState("8081");
@@ -64,8 +68,13 @@ export function InstancesHome({
           <span className="brand-mark">L/</span>LlamaPanel
         </div>
         <span className="muted">Local workspace</span>
+        <button className="settings-button" onClick={onSettings}>⚙ Settings</button>
       </header>
       <main>
+        {needsSetup && <div className="flags-notice">
+          <span>Choose your model and LoRA directories and llama-server executable to get started.</span>
+          <button onClick={onSettings}>Set up LlamaPanel</button>
+        </div>}
         <div className="page-heading">
           <div>
             <p className="eyebrow">Your workspace</p>

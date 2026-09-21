@@ -81,7 +81,8 @@ def test_scoped_log_streams_do_not_leak(client):
         assert ws.receive_text() == 'second-only'
 
 
-async def test_real_parallel_children_restore_and_independent_stop(settings, tmp_path):
+@pytest.mark.parametrize('change_binary', [False, True])
+async def test_real_parallel_children_restore_and_independent_stop(settings, tmp_path, change_binary):
     # Actual subprocesses, without model/GPU dependencies. Fake health only.
     settings = dataclasses.replace(settings, server_bin=sys.executable)
     registry = InstanceRegistry(settings, FakeLlamaClient(healthy=[True], busy=[False]))
@@ -106,6 +107,8 @@ async def test_real_parallel_children_restore_and_independent_stop(settings, tmp
         assert 'SECOND' in second_manager._log_buffer
         await registry.shutdown()
         assert psutil.pid_exists(first_manager._pid) and psutil.pid_exists(second_manager._pid)
+        if change_binary:
+            settings = dataclasses.replace(settings, server_bin='different-llama-server')
         restored = InstanceRegistry(settings, FakeLlamaClient(healthy=[True], busy=[False]))
         assert restored.managers['default']._adopted
         assert restored.managers[second.id]._adopted

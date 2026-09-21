@@ -18,6 +18,5 @@ frontend/tsconfig.tsbuildinfo
 # an explicit data_dir may still point here.
 /data/
 
-# Local machine config (models_dir, llama_bin, port, ...) - copy from
-# config.example.ini, never commit the real one.
+# Ignore obsolete local configuration left over from older releases.
 /config.ini

@@ -1,0 +1,143 @@
+"""Global settings and a read-only browser of the backend machine's paths."""
+import asyncio
+import dataclasses
+import os
+from pathlib import Path
+import shutil
+import string
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.deps import SettingsDep
+from app.flags import FlagCatalog
+from app.introspection import BinaryInspector
+from app.presets import PresetStore
+from app.schemas import ResponseModel
+from app.settings import settings_store
+
+router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+class SettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    models_dir: str = Field(min_length=1, max_length=4096)
+    loras_dir: str = Field(min_length=1, max_length=4096)
+    server_bin: str = Field(min_length=1, max_length=4096)
+
+
+class SettingsView(ResponseModel):
+    models_dir: str
+    loras_dir: str
+    server_bin: str
+    data_dir: str
+    locked_fields: list[str]
+    needs_setup: bool
+
+
+def view(settings):
+    return SettingsView(models_dir=str(settings.models_dir),
+                        loras_dir=str(settings.loras_dir or settings.models_dir / "loras"),
+                        server_bin=settings.server_bin, data_dir=str(settings.data_dir),
+                        locked_fields=list(settings.locked_fields),
+                        needs_setup=(not settings.models_dir.is_dir()
+                                     or not (settings.loras_dir or settings.models_dir / "loras").is_dir()
+                                     or not shutil.which(settings.server_bin)))
+
+
+@router.get("", response_model=SettingsView)
+def get_settings(settings: SettingsDep):
+    return view(settings)
+
+
+def validate_paths(update):
+    values = update.model_dump()
+    for key in ("models_dir", "loras_dir"):
+        path = Path(values[key]).expanduser()
+        if not path.is_absolute() or not path.is_dir():
+            raise HTTPException(422, f"{key}: select an existing absolute directory")
+        try:
+            with os.scandir(path):
+                pass
+        except OSError:
+            raise HTTPException(422, f"{key}: directory is not readable")
+        values[key] = str(path.resolve())
+    binary = os.path.expanduser(values["server_bin"])
+    resolved = shutil.which(binary)
+    if not resolved or not Path(resolved).is_file():
+        raise HTTPException(422, "server_bin: executable was not found or is not executable")
+    values["server_bin"] = str(Path(resolved).resolve())
+    return values
+
+
+@router.put("", response_model=SettingsView)
+async def save_settings(update: SettingsUpdate, request: Request):
+    state = request.app.state
+    async with state.instances.lock:
+        current = state.settings
+        for key in current.locked_fields:
+            if getattr(update, key) != str(getattr(current, key)):
+                raise HTTPException(409, f"{key} is overridden by a launch argument or environment variable")
+        values = await asyncio.to_thread(validate_paths, update)
+        # Never persist launch-only overrides as user preferences.
+        store = settings_store(current.data_dir)
+        saved = await asyncio.to_thread(store.load)
+        saved.update({k: v for k, v in values.items() if k not in current.locked_fields})
+        try:
+            await asyncio.to_thread(store.save, saved)
+        except OSError as exc:
+            raise HTTPException(500, f"Could not save settings: {exc}")
+        updated = dataclasses.replace(current, models_dir=Path(values["models_dir"]),
+                                      loras_dir=Path(values["loras_dir"]), server_bin=values["server_bin"])
+        inspector = BinaryInspector(updated.server_bin)
+        catalog = FlagCatalog(inspector)
+        state.settings = updated
+        state.instances.settings = updated
+        state.inspector = inspector
+        state.catalog = catalog
+        state.presets = PresetStore(updated.presets_file, resolve=catalog.resolve)
+        return view(updated)
+
+
+class BrowserEntry(ResponseModel):
+    name: str
+    path: str
+    directory: bool
+
+
+class BrowserView(ResponseModel):
+    path: str
+    parent: str | None
+    roots: list[str]
+    entries: list[BrowserEntry]
+
+
+def browser_roots():
+    if os.name == "nt":
+        return [f"{letter}:\\" for letter in string.ascii_uppercase if Path(f"{letter}:\\").is_dir()]
+    return ["/", str(Path.home())]
+
+
+@router.get("/browse", response_model=BrowserView)
+def browse(path: str | None = None, mode: Literal["directory", "file"] = "directory"):
+    directory = Path(path).expanduser() if path else Path.home()
+    if not directory.is_absolute():
+        raise HTTPException(422, "Enter an absolute path on the backend machine")
+    try:
+        directory = directory.resolve(strict=True)
+        entries = []
+        with os.scandir(directory) as listing:
+            for entry in listing:
+                try:
+                    is_dir = entry.is_dir()
+                    if is_dir or (mode == "file" and entry.is_file()):
+                        entries.append(BrowserEntry(name=entry.name, path=str(directory / entry.name), directory=is_dir))
+                except OSError:
+                    continue
+    except PermissionError:
+        raise HTTPException(403, "This directory is not accessible to the panel")
+    except (OSError, ValueError):
+        raise HTTPException(404, "Directory does not exist or is unavailable")
+    return BrowserView(path=str(directory), parent=str(directory.parent) if directory.parent != directory else None,
+                       roots=browser_roots(), entries=sorted(entries, key=lambda e: (not e.directory, e.name.casefold())))

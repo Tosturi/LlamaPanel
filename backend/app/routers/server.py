@@ -35,7 +35,7 @@ def _find_model(settings: Settings, model_id: str) -> ModelInfo:
 def _binary_not_found(settings: Settings) -> HTTPException:
     return HTTPException(
         status_code=500,
-        detail=f"'{settings.server_bin}' binary not found. Set server_bin in config.ini or LLAMAPANEL_SERVER_BIN.",
+        detail=f"'{settings.server_bin}' binary not found. Choose the executable in Settings.",
     )
 
 
@@ -89,6 +89,8 @@ async def _launch(req, request, manager, settings, catalog, restart=False):
     id = request.query_params.get('instance_id', 'default')
     async with registry.lock:
         record, manager = registry.get(id)
+        settings = request.app.state.settings
+        catalog = request.app.state.catalog
         model = await asyncio.to_thread(_find_model, settings, req.model_id)
         if restart and manager.state not in ('running', 'starting'):
             raise HTTPException(409, 'Server is not running; use Start instead')
