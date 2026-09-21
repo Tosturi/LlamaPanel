@@ -252,4 +252,23 @@ dt { color: var(--muted); } dd { margin: 0; text-align: right; overflow-wrap: an
 .browser-roots { margin: 16px 0; }
 .browser-entries { display: grid; max-height: 360px; overflow: auto; margin: 16px 0; gap: 6px; }
 .browser-entries button { text-align: left; overflow-wrap: anywhere; }
+dialog.path-browser { margin: auto; width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; color: var(--text); box-sizing: border-box; }
+dialog.path-browser::backdrop { background: #0009; }
 .instance-form { margin-bottom: 24px; max-width: 640px; }
+.workspace-header { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.workspace-header nav { justify-content: center; }
+.header-actions { display: flex; align-items: center; justify-self: end; gap: 20px; }
+.header-actions .settings-button { margin-left: 0; }
+.setup-card { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.setup-card h2 { margin: 0 0 8px; font-size: 18px; }
+.setup-card p { margin: 0; }
+.setup-card > button { flex-shrink: 0; }
+@media (max-width: 1100px) {
+  .workspace-header { grid-template-columns: minmax(0, 1fr) auto; }
+  .workspace-header nav { grid-column: 1 / -1; grid-row: 2; width: 100%; }
+  .header-actions { grid-column: 2; grid-row: 1; }
+  .header-actions .workspace-label { display: none; }
+}
+@media (max-width: 600px) {
+  .setup-card { align-items: flex-start; flex-direction: column; gap: 16px; }
+}

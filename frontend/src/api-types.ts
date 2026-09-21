@@ -292,6 +292,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/pick": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Native Picker */
+        post: operations["native_picker_api_settings_pick_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -549,6 +566,26 @@ export interface components {
             path: string;
             /** Size Bytes */
             size_bytes: number;
+        };
+        /** NativePickerRequest */
+        NativePickerRequest: {
+            /**
+             * Initial
+             * @default
+             */
+            initial: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "directory" | "file";
+        };
+        /** NativePickerView */
+        NativePickerView: {
+            /** Available */
+            available: boolean;
+            /** Path */
+            path: string | null;
         };
         /** Preset */
         Preset: {
@@ -1223,6 +1260,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BrowserView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    native_picker_api_settings_pick_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NativePickerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativePickerView"];
                 };
             };
             /** @description Validation Error */

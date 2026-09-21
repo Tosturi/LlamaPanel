@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import shutil
 import string
+import ipaddress
+from urllib.parse import urlsplit
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
@@ -16,8 +18,41 @@ from app.introspection import BinaryInspector
 from app.presets import PresetStore
 from app.schemas import ResponseModel
 from app.settings import settings_store
+from app.native_picker import pick_path
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+class NativePickerRequest(BaseModel):
+    mode: Literal["directory", "file"]
+    initial: str = Field(default="", max_length=4096)
+
+
+class NativePickerView(ResponseModel):
+    available: bool
+    path: str | None
+
+
+@router.post("/pick", response_model=NativePickerView)
+async def native_picker(body: NativePickerRequest, request: Request):
+    # A remote browser must not open windows on someone else's desktop.
+    try:
+        local = request.client is not None and ipaddress.ip_address(request.client.host).is_loopback
+    except ValueError:
+        local = False
+    if not local:
+        return NativePickerView(available=False, path=None)
+    origin = request.headers.get('origin')
+    if origin and urlsplit(origin).netloc != request.headers.get('host'):
+        raise HTTPException(403, 'Native picker requires a same-origin request')
+    lock = request.app.state.native_picker_lock
+    if lock.locked():
+        raise HTTPException(409, 'A file picker is already open')
+    async with lock:
+        try:
+            return NativePickerView(**await pick_path(body.mode, body.initial))
+        except (OSError, NotImplementedError):
+            return NativePickerView(available=False, path=None)
 
 
 class SettingsUpdate(BaseModel):

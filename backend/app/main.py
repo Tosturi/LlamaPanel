@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 from typing import AsyncIterator, Optional
 
 from fastapi import FastAPI
@@ -31,6 +32,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         settings.ensure_dirs()
         client = LlamaClient()
         app.state.settings = settings
+        app.state.native_picker_lock = asyncio.Lock()
         # Lazy: the binary is probed on the first request that needs the
         # flag schema, not here, so a missing llama-server never blocks
         # panel startup (the bundled --help snapshot stands in).
