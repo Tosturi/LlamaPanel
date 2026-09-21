@@ -252,4 +252,6 @@ dt { color: var(--muted); } dd { margin: 0; text-align: right; overflow-wrap: an
 .browser-roots { margin: 16px 0; }
 .browser-entries { display: grid; max-height: 360px; overflow: auto; margin: 16px 0; gap: 6px; }
 .browser-entries button { text-align: left; overflow-wrap: anywhere; }
+dialog.path-browser { margin: auto; width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; color: var(--text); box-sizing: border-box; }
+dialog.path-browser::backdrop { background: #0009; }
 .instance-form { margin-bottom: 24px; max-width: 640px; }

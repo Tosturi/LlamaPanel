@@ -18,6 +18,7 @@ function PathBrowser({ mode, onSelect, onClose }: {
   const [error, setError] = useState('');
   const request = useRef<AbortController | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
   const navigate = async (target: string) => {
     request.current?.abort();
     const controller = new AbortController();
@@ -33,10 +34,11 @@ function PathBrowser({ mode, onSelect, onClose }: {
     }
   };
   useEffect(() => {
+    dialog.current?.showModal();
     navigate(''); input.current?.focus();
     return () => request.current?.abort();
   }, []);
-  return <section className="panel path-browser" aria-label="Browse backend files">
+  return <dialog ref={dialog} className="panel path-browser" aria-label="Browse backend files" onCancel={e => { e.preventDefault(); onClose(); }}>
     <div className="panel-header"><h2>{mode === 'directory' ? 'Select folder' : 'Select executable'}</h2>
       <button type="button" onClick={onClose}>Close browser</button></div>
     <p className="muted">Files on the machine running LlamaPanel.</p>
@@ -63,7 +65,7 @@ function PathBrowser({ mode, onSelect, onClose }: {
       </div>
       {mode === 'directory' && <button type="button" className="primary" disabled={path !== listing.path} onClick={() => onSelect(listing.path)}>Select this folder</button>}
     </>}
-  </section>;
+  </dialog>;
 }
 
 export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved: (value: SettingsView) => void }) {
@@ -72,6 +74,8 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [pending, setPending] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const pickingRef = useRef(false);
   const [browser, setBrowser] = useState<keyof SettingsUpdate | null>(null);
   const browseButton = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
@@ -81,11 +85,22 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
     return () => { active = false; };
   }, []);
   const closeBrowser = () => { setBrowser(null); browseButton.current?.focus(); };
+  const browse = async (key: keyof SettingsUpdate) => {
+    if (!values || pickingRef.current) return;
+    pickingRef.current = true;
+    setPicking(true); setError(''); setMessage('');
+    try {
+      const result = await api.pickPath(key === 'server_bin' ? 'file' : 'directory', values[key]);
+      if (!result.available) setBrowser(key);
+      else if (result.path) setValues(prev => prev && ({ ...prev, [key]: result.path! }));
+    } catch (e) { setError(String(e)); }
+    finally { pickingRef.current = false; setPicking(false); browseButton.current?.focus(); }
+  };
   return <div className="app studio">
     <header className="app-header"><div className="brand"><span className="brand-mark">L/</span>LlamaPanel</div><span>Settings</span></header>
     <main>
-      <button onClick={onBack} disabled={pending}>← Back</button>
-      <div className="page-heading"><div><p className="eyebrow">Application</p><h1>Settings</h1>
+      <button onClick={onBack} disabled={pending || picking}>← Back</button>
+      <div className="page-heading"><div><h1>Settings</h1>
         <p className="muted">Shared libraries and runtime for all servers.</p></div></div>
       {error && <p className="error-banner" role="alert">{error}</p>}
       {!values && !error && <p role="status">Loading settings…</p>}
@@ -101,16 +116,17 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
         {fields.map(([key, label]) => <div key={key}>
           <label className="field-label" htmlFor={`settings-${key}`}>{label}</label>
           <div className="settings-path-row">
-            <input id={`settings-${key}`} required value={values[key]} disabled={pending || settings.locked_fields.includes(key)}
+            <input id={`settings-${key}`} required value={values[key]} disabled={pending || picking || settings.locked_fields.includes(key)}
               onChange={e => { setValues({...values, [key]:e.target.value}); setMessage(''); }} />
-            <button type="button" disabled={pending || settings.locked_fields.includes(key)} aria-label={`Browse ${label}`}
-              onClick={e => { browseButton.current = e.currentTarget; setBrowser(key); }}>Browse…</button>
+            <button type="button" disabled={pending || picking || settings.locked_fields.includes(key)} aria-label={`Browse ${label}`}
+              onClick={e => { browseButton.current = e.currentTarget; browse(key); }}>Browse…</button>
           </div>
           {settings.locked_fields.includes(key) && <p className="muted">Set by a launch argument or environment variable.</p>}
         </div>)}
         <p className="muted">Choose paths on the backend machine. The executable is used for future starts and restarts. Already queued restarts keep their original configuration.</p>
         <p className="muted">Settings, presets and logs: <code className="file-path">{settings.data_dir}</code></p>
-        <button className="primary" disabled={pending || browser !== null}>{pending ? 'Saving…' : 'Save settings'}</button>
+        <button className="primary" disabled={pending || picking || browser !== null}>{pending ? 'Saving…' : 'Save settings'}</button>
+        {picking && <p role="status">Choose a path in the system dialog…</p>}
         <p role="status">{message}</p>
       </form>}
       {browser && values && <PathBrowser key={browser} mode={browser === 'server_bin' ? 'file' : 'directory'}

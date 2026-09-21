@@ -15,6 +15,7 @@ import type {
   SettingsView,
   SettingsUpdate,
   BrowserView,
+  NativePickerView,
 } from "./types";
 
 // Relative to the current origin: works both in Vite dev (proxied, see
@@ -41,6 +42,8 @@ function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export const api = {
+  pickPath: (mode: 'directory' | 'file', initial: string) =>
+    post<NativePickerView>('/api/settings/pick', { mode, initial }),
   getSettings: () => fetch('/api/settings').then(r => json<SettingsView>(r)),
   saveSettings: (settings: SettingsUpdate) => fetch('/api/settings', {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },

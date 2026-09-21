@@ -3,8 +3,12 @@
 [Documentation](README.md) · [Installation and startup](../README.md)
 
 Open **Settings** in the header to choose the models directory, a separate LoRA
-directory, and the `llama-server` executable. **Browse** lists folders and files
-on the backend machine, including drive roots on Windows. You can also enter
+directory, and the `llama-server` executable. When connected locally through
+localhost, **Browse** opens a system selection dialog on the backend desktop
+using Python's Tk support. It starts at the current path; cancelling leaves
+the field unchanged. If Tk or a desktop session is unavailable, or the client
+connects remotely, a modal browser lists the backend's folders and files,
+including drive roots on Windows. Escape closes that modal. You can also enter
 an absolute path, including a network path accessible to the backend account.
 The browser never uploads files and does not create or delete them.
 
