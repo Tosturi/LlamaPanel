@@ -1,59 +1,73 @@
-# Несколько экземпляров llama-server
+# Multiple llama-server instances
 
-[Документация](README.md) · [Архитектура](HLD.md)
+[Documentation](README.md) · [Architecture](HLD.md)
 
-## Работа через интерфейс
+## Using the interface
 
-На странице **Servers** показаны независимые экземпляры `llama-server`.
-Нажми **Create server**, укажи имя и уникальный порт API. Открой экземпляр,
-выбери модель и настрой флаги.
+The **Servers** page lists independent `llama-server` instances. Click
+**Create server** and choose a name and a unique API port.
 
-- **Save configuration** сохраняет конфигурацию без запуска или перезапуска.
-- **Start** и **Apply & restart** также сохраняют запрошенную конфигурацию.
-- Черновики сохраняются при переключении между экземплярами в текущей вкладке
-  браузера; после перезагрузки страницы доступны только сохранённые настройки.
-- Модели и пресеты общие. Загрузка пресета не меняет порт экземпляра;
-  панель передаёт этот порт явно.
+Each card provides these controls:
 
-У каждого экземпляра отдельные процесс, проверки готовности, очередь перезапуска
-и поток логов. Остановка одного экземпляра не останавливает остальные.
+- **Open server** opens the instance's configuration.
+- **Start** launches its saved model and flags. Save a configuration first;
+  unsaved workspace edits are not used by this shortcut.
+- **Stop** stops that instance without affecting the others.
+- **Logs** opens that instance's live logs directly, including when it is stopped.
 
-## Порты и удаление
+Start and Stop show progress and are disabled when unavailable. Errors appear
+on the affected card. Other instances can still be controlled independently.
 
-Порт зарезервирован за сохранённым экземпляром даже в остановленном состоянии.
-Если порт занят внешним процессом, запуск отклоняется. Перед изменением порта
-или удалением экземпляра останови его.
+Inside an instance, the main tabs are **Server**, **Models**, **LoRA library**
+and **Presets**. **Server** returns to that instance's configuration.
+**All servers**, below the main navigation, returns to the instance list from
+any tab. Reopening an instance keeps its unsaved edits.
 
-Удаление конфигурации не удаляет модели, пресеты и файлы логов. Экземпляр
-`default` сохраняется для совместимости со старыми клиентами API; удалить
-его через интерфейс или API нельзя.
+- **Save configuration** saves without starting or restarting the server.
+- **Start** and **Apply & restart** in the workspace also save the requested configuration.
+- Drafts survive switching between instances in the current browser tab;
+  reloading the page restores only saved settings.
+- Models and presets are shared. Loading a preset does not change the instance's
+  port; the panel passes that port explicitly.
 
-## Хранение и восстановление
+Each instance has its own process, readiness checks, restart queue and log stream.
+Stopping one instance does not stop the others.
 
-Конфигурации и данные для идентификации процессов записываются в `instances.json`
-в [директории данных панели](configuration.md). Логи дополнительных экземпляров
-лежат в `instances/<id>/llama-server.log`; `default` использует прежний
-`llama-server.log` в корне директории данных.
+## Ports and deletion
 
-Закрытие панели оставляет процессы работающими. При следующем запуске PID
-сверяется со временем создания процесса и идентичностью исполняемого файла.
-Остановленные экземпляры не запускаются автоматически. Отложенные перезапуски
-отменяются при завершении панели.
+A saved instance reserves its port even while stopped. Startup is rejected if
+an external process occupies that port. Stop the instance before changing its
+port or deleting it.
 
-Используй один процесс панели на директорию данных. Одновременный запуск
-нескольких моделей требует достаточного объёма RAM/VRAM; распределением
-GPU-памяти панель не управляет.
+Deleting a configuration does not delete model files, presets or logs. The
+`default` instance remains for compatibility with older API clients and cannot
+be deleted through the UI or API.
+
+## Storage and recovery
+
+Configurations and process identity records are stored in `instances.json` in
+the [panel's data directory](configuration.md). Additional instances write logs
+to `instances/<id>/llama-server.log`; `default` keeps the original
+`llama-server.log` at the data directory root.
+
+Closing the panel leaves server processes running. On the next launch, recorded
+PIDs are checked against process creation times and executable identity before
+reattachment. Stopped instances are not started automatically. Queued restarts
+are cancelled when the panel shuts down.
+
+Use one panel process per data directory. Running multiple models requires
+enough RAM/VRAM; the panel does not manage GPU memory allocation.
 
 ## API
 
-| Метод и путь | Назначение |
+| Method and path | Purpose |
 |---|---|
-| `GET /api/instances` | Список конфигураций и состояний |
-| `POST /api/instances` | Создание экземпляра |
-| `PUT /api/instances/{id}` | Сохранение конфигурации |
-| `DELETE /api/instances/{id}` | Удаление остановленного экземпляра |
+| `GET /api/instances` | List configurations and statuses |
+| `POST /api/instances` | Create an instance |
+| `PUT /api/instances/{id}` | Save a configuration |
+| `DELETE /api/instances/{id}` | Delete a stopped instance |
 
-Маршруты `/api/server/status`, `/api/server/start`, `/api/server/stop`,
-`/api/server/restart`, `/api/server/restart/cancel` и WebSocket
-`/api/server/logs` принимают `?instance_id=<id>`. Без него используется
-`default`. `/api/server/flags` и `/api/server/binary` остаются общими.
+The `/api/server/status`, `/api/server/start`, `/api/server/stop`,
+`/api/server/restart`, `/api/server/restart/cancel` routes and the
+`/api/server/logs` WebSocket accept `?instance_id=<id>`. Omitting it selects
+`default`. `/api/server/flags` and `/api/server/binary` remain shared.

@@ -1,16 +1,16 @@
-# Разработка и релизы
+# Development and releases
 
-[Документация](README.md) · [Архитектура](HLD.md)
+[Documentation](README.md) · [Architecture](HLD.md)
 
-## Локальная разработка
+## Local development
 
-Из корня проекта запусти backend:
+Start the backend from the repository root:
 
 ```bash
 python run.py --reload
 ```
 
-В другом терминале запусти frontend:
+Start the frontend in another terminal:
 
 ```bash
 cd frontend
@@ -18,10 +18,10 @@ npm ci
 npm run dev
 ```
 
-Vite открывает интерфейс на `http://localhost:5173` и проксирует `/api`,
-включая WebSocket логов, на `http://localhost:8000`.
+Vite serves the UI at `http://localhost:5173` and proxies `/api`, including
+the logs WebSocket, to `http://localhost:8000`.
 
-Проверки из корня проекта:
+Run checks from the repository root:
 
 ```bash
 python -m pip install -r backend/requirements-dev.txt
@@ -33,44 +33,45 @@ npm run build
 npm run gen:api
 ```
 
-После генерации проверь изменения `frontend/src/api-types.ts` и включи их в коммит,
-если изменился контракт API.
+Review generated changes in `frontend/src/api-types.ts` and commit them when
+the API contract changes.
 
-### Типы API для фронтенда
+## Frontend API types
 
-`frontend/src/api-types.ts` генерируется из OpenAPI-схемы бэкенда и коммитится:
+`frontend/src/api-types.ts` is generated from the backend OpenAPI schema and
+tracked in Git:
 
 ```bash
 cd frontend && npm run gen:api
 ```
 
-Скрипт берёт Python из `./.venv` (или `$PYTHON`, или `python` из PATH),
-экспортирует схему через `backend/export_openapi.py` и прогоняет её через
-`openapi-typescript`. `src/types.ts` содержит только короткие алиасы на
-сгенерированные типы. После изменения `backend/app/schemas.py` или роутов
-нужно перегенерировать файл — CI сравнивает его с актуальной схемой и падает,
-если он устарел.
+The script uses Python from `./.venv` (or `$PYTHON`, or `python` on PATH),
+exports the schema through `backend/export_openapi.py`, and runs
+`openapi-typescript`. `src/types.ts` contains short aliases for the generated
+types. Regenerate after changing `backend/app/schemas.py` or routes; CI compares
+the file with the current schema and fails if it is outdated.
 
-### Пайплайн
+## Pipelines
 
-- **CI** (`.github/workflows/ci.yml`): на каждый PR и пуш в `main` гоняются тесты
-  бэкенда, typecheck/сборка фронтенда и проверка актуальности `api-types.ts`.
-  Ничего не публикуется.
-- **Релиз** (`.github/workflows/release.yml`): срабатывает на пуш тега `v*`.
-  Проверяет, что тег совпадает с `VERSION`, прогоняет тесты, собирает фронтенд,
-  упаковывает `LlamaPanel-v<version>.zip` (+ `.sha256`) и создаёт GitHub Release
-  со списком коммитов с предыдущего тега.
+- **CI** (`.github/workflows/ci.yml`) runs backend tests, frontend type checking
+  and builds, and checks API types on every PR and push to `main`. It publishes nothing.
+- **Release** (`.github/workflows/release.yml`) runs on `v*` tags. It checks that
+  the tag matches `VERSION`, runs tests, builds the frontend, packages
+  `LlamaPanel-v<version>.zip` (including `docs/`) and its `.sha256`, and creates
+  a GitHub Release with the commits since the previous tag.
 
-Выпустить новую версию можно двумя способами.
+There are two ways to publish a new version. The versions below are examples;
+choose a version newer than the current one.
 
-**Через GitHub Actions** (`.github/workflows/bump-version.yml`): Actions → «Bump
-version» → Run workflow → ввести `0.2.0`. Workflow проверит формат и что версия
-растёт, запишет `VERSION`, закоммитит в `main`, поставит тег `v0.2.0` и запушит.
-Дальше сработает `release.yml`. Требует секрет `RELEASE_TOKEN` (fine-grained PAT
-с правом Contents: Read and write только на этот репозиторий), потому что тег,
-запушенный стандартным `GITHUB_TOKEN`, не запускает другие workflow.
+**GitHub Actions** (`.github/workflows/bump-version.yml`): open Actions →
+**Bump version** → **Run workflow** and enter a version such as `0.2.0`.
+The workflow validates the format and version increase, updates `VERSION`,
+commits to `main`, creates `v0.2.0`, and pushes. This triggers `release.yml`.
+It requires a `RELEASE_TOKEN` secret: a fine-grained PAT with Contents: Read
+and write for this repository. Tags pushed with the default `GITHUB_TOKEN`
+do not trigger other workflows.
 
-**Руками:**
+**Manually:**
 
 ```bash
 echo 0.2.0 > VERSION
@@ -78,4 +79,3 @@ git commit -am "Bump version to 0.2.0"
 git tag v0.2.0
 git push && git push origin v0.2.0
 ```
-

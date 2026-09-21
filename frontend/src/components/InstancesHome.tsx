@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { instancesApi } from "../api";
+import { useRef, useState } from "react";
+import { instanceApi, instancesApi } from "../api";
 import type { InstanceView } from "../types";
 
 export function InstancesHome({
@@ -8,8 +8,8 @@ export function InstancesHome({
   onRefresh,
 }: {
   instances: InstanceView[];
-  onOpen: (id: string) => void;
-  onRefresh: () => void;
+  onOpen: (id: string, view?: "configuration" | "logs") => void;
+  onRefresh: () => Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [port, setPort] = useState("8081");
@@ -17,12 +17,40 @@ export function InstancesHome({
   const [pending, setPending] = useState(false);
   const [editing, setEditing] = useState<InstanceView | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const activeActions = useRef(new Set<string>());
+  const [actions, setActions] = useState<Record<string, "start" | "stop">>({});
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+  const control = async (item: InstanceView, action: "start" | "stop") => {
+    if (activeActions.current.has(item.id)) return;
+    activeActions.current.add(item.id);
+    setActions((prev) => ({ ...prev, [item.id]: action }));
+    setActionErrors((prev) => ({ ...prev, [item.id]: "" }));
+    try {
+      const api = instanceApi(item.id);
+      if (action === "start") {
+        if (!item.model_id) return;
+        await api.startServer(item.model_id, item.flags);
+      } else {
+        await api.stopServer();
+      }
+    } catch (e) {
+      setActionErrors((prev) => ({ ...prev, [item.id]: String(e) }));
+    } finally {
+      await onRefresh();
+      activeActions.current.delete(item.id);
+      setActions((prev) => {
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
+    }
+  };
   const run = async (action: () => Promise<unknown>) => {
     setPending(true);
     setError("");
     try {
       await action();
-      onRefresh();
+      await onRefresh();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -141,11 +169,43 @@ export function InstancesHome({
                 {item.status.restart_pending ? " · Restart queued" : ""}
               </p>
               <div className="instance-actions">
+                <button
+                  disabled={
+                    !!actions[item.id] ||
+                    !item.model_id ||
+                    !["stopped", "crashed"].includes(item.status.state)
+                  }
+                  title={
+                    item.model_id
+                      ? "Start the saved configuration"
+                      : "Open server and save a model first"
+                  }
+                  onClick={() => control(item, "start")}
+                >
+                  {actions[item.id] === "start" ? "Starting…" : "Start"}
+                </button>
+                <button
+                  disabled={
+                    !!actions[item.id] ||
+                    !["running", "starting"].includes(item.status.state)
+                  }
+                  onClick={() => control(item, "stop")}
+                >
+                  {actions[item.id] === "stop" ? "Stopping…" : "Stop"}
+                </button>
+                <button onClick={() => onOpen(item.id, "logs")}>Logs</button>
+              </div>
+              {actionErrors[item.id] && (
+                <p className="error-banner" role="alert">
+                  {actionErrors[item.id]}
+                </p>
+              )}
+              <div className="instance-actions">
                 <button className="primary" onClick={() => onOpen(item.id)}>
                   Open server →
                 </button>
                 <button
-                  disabled={pending}
+                  disabled={pending || !!actions[item.id]}
                   onClick={() => {
                     setEditing(item);
                     setName(item.name);
@@ -160,6 +220,7 @@ export function InstancesHome({
                     className="danger-button"
                     disabled={
                       pending ||
+                      !!actions[item.id] ||
                       ["running", "starting", "stopping"].includes(
                         item.status.state,
                       )

@@ -1,11 +1,11 @@
-# Документация LlamaPanel
+# LlamaPanel documentation
 
-[Установка и запуск](../README.md)
+[Installation and startup](../README.md)
 
-- [HLD: архитектура](HLD.md) — компоненты, жизненный цикл, флаги и границы системы.
-- [Конфигурация и хранение данных](configuration.md) — настройки, пути, пресеты и миграции.
-- [Несколько экземпляров](instances.md) — работа через интерфейс, порты, восстановление и API.
-- [Разработка и релизы](development.md) — локальная разработка, типы API, CI и выпуск версий.
+- [HLD: architecture](HLD.md) — components, lifecycle, flags and system boundaries.
+- [Configuration and storage](configuration.md) — settings, paths, presets and migrations.
+- [Multiple instances](instances.md) — navigation, quick controls, ports, recovery and API.
+- [Development and releases](development.md) — local development, API types, CI and releases.
 
-Документы HLD размещаются в этой директории. `HLD.md` описывает текущую архитектуру;
-отдельные архитектурные документы можно добавлять рядом и включать в этот список.
+Keep HLD documents in this directory. `HLD.md` describes the current architecture;
+add further architecture documents alongside it and link them here.

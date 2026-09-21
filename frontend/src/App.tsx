@@ -33,9 +33,11 @@ function describeBuild(binary: BinaryInfo): string {
 function ServerWorkspace({
   instance,
   onBack,
+  navigation,
 }: {
   instance: InstanceView;
   onBack: () => void;
+  navigation: { id: string; view: "configuration" | "logs" } | null;
 }) {
   const api = useMemo(() => instanceApi(instance.id), [instance.id]);
   const [saveMessage, setSaveMessage] = useState("");
@@ -43,8 +45,13 @@ function ServerWorkspace({
     "server",
   );
   const [tab, setTab] = useState<"overview" | "configuration" | "logs">(
-    "overview",
+    "configuration",
   );
+  useEffect(() => {
+    if (navigation?.id !== instance.id) return;
+    setPage("server");
+    setTab(navigation.view);
+  }, [navigation, instance.id]);
   const [search, setSearch] = useState("");
   const [connectionError, setConnectionError] = useState(false);
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -341,7 +348,7 @@ function ServerWorkspace({
         <nav aria-label="Main navigation">
           {(
             [
-              ["server", "Servers"],
+              ["server", "Server"],
               ["models", "Models"],
               ["loras", "LoRA library"],
               ["presets", "Presets"],
@@ -353,7 +360,7 @@ function ServerWorkspace({
               className={page === key ? "chosen" : ""}
               onClick={() => {
                 if (key === "server") {
-                  onBack();
+                  configure();
                   return;
                 }
                 setPage(key);
@@ -367,6 +374,10 @@ function ServerWorkspace({
         <span className="muted workspace-label">Local workspace</span>
       </header>
       <main id="main-content">
+        <div className="instance-toolbar">
+          <button onClick={onBack}>← All servers</button>
+          <span className="muted">{instance.name} · Port {instance.port}</span>
+        </div>
         {error && (
           <div className="error-banner" role="alert">
             {error}
@@ -395,7 +406,6 @@ function ServerWorkspace({
               <span className="badge">Port {instance.port}</span>
             </div>
             <div className="instance-toolbar">
-              <button onClick={onBack}>← All servers</button>
               <span className="muted">
                 Port {instance.port} is reserved for this instance.
               </span>
@@ -740,27 +750,38 @@ function ServerWorkspace({
 export default function App() {
   const [instances, setInstances] = useState<InstanceView[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const [navigation, setNavigation] = useState<{
+    id: string;
+    view: "configuration" | "logs";
+  } | null>(null);
   const [visited, setVisited] = useState<string[]>([]);
   const [error, setError] = useState("");
-  const refresh = () =>
-    instancesApi
+  const refreshVersion = useRef(0);
+  const refresh = () => {
+    const version = ++refreshVersion.current;
+    return instancesApi
       .list()
       .then((rows) => {
+        if (version !== refreshVersion.current) return;
         setInstances(rows);
         setSelected((id) =>
           id && !rows.some((row) => row.id === id) ? null : id,
         );
         setError("");
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => {
+        if (version === refreshVersion.current) setError(String(e));
+      });
+  };
   useEffect(() => {
     refresh();
     const timer = setInterval(refresh, 5000);
     return () => clearInterval(timer);
   }, []);
-  const open = (id: string) => {
+  const open = (id: string, view: "configuration" | "logs" = "configuration") => {
     setVisited((ids) => (ids.includes(id) ? ids : [...ids, id]));
     setSelected(id);
+    setNavigation({ id, view });
   };
   return (
     <>
@@ -782,6 +803,7 @@ export default function App() {
           <div key={item.id} hidden={selected !== item.id}>
             <ServerWorkspace
               instance={item}
+              navigation={navigation}
               onBack={() => {
                 setSelected(null);
                 refresh();

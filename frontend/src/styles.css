@@ -242,4 +242,5 @@ dt { color: var(--muted); } dd { margin: 0; text-align: right; overflow-wrap: an
 .instance-toolbar, .instance-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .instance-toolbar { margin-bottom: 20px; }
 .instance-actions .danger-button { margin-left: 0; }
+.instance-actions + .instance-actions { margin-top: 12px; }
 .instance-form { margin-bottom: 24px; max-width: 640px; }
