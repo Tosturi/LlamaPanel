@@ -60,6 +60,11 @@ the file with the current schema and fails if it is outdated.
   `LlamaPanel-v<version>.zip` (including `docs/`) and its `.sha256`, and creates
   a GitHub Release with the commits since the previous tag.
 
+Release archives also include `release.json`, declaring the updater protocol and
+minimum Python version. See [application updates](updates.md) before changing
+the release layout or launcher protocol. Version bumps remain a maintainer action;
+the updater only installs published stable releases.
+
 There are two ways to publish a new version. The versions below are examples;
 choose a version newer than the current one.
 

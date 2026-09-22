@@ -55,6 +55,11 @@ On **Servers**, create an instance with its own port. Click **Open server**,
 select a model and press **Start**. See the [instance guide](docs/instances.md)
 for navigation and quick controls.
 
+Release installations support **Settings → Updates → Check for updates → Update & restart**.
+Install the first release with updater support manually; subsequent compatible
+releases include the built UI and can be installed from the panel.
+See [updating](docs/updates.md) for requirements and recovery.
+
 After updating the source, run `npm ci` and `npm run build` in `frontend` again,
 then restart the panel. Settings, presets, instance configurations and logs are stored separately from the
 installation directory; see [configuration and storage](docs/configuration.md).

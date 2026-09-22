@@ -20,3 +20,5 @@ frontend/tsconfig.tsbuildinfo
 
 # Ignore obsolete local configuration left over from older releases.
 /config.ini
+/.updates/
+/release.json

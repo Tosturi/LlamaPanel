@@ -29,3 +29,4 @@ export type SettingsView = Schemas["SettingsView"];
 export type SettingsUpdate = Schemas["SettingsUpdate"];
 export type BrowserView = Schemas["BrowserView"];
 export type NativePickerView = Schemas["NativePickerView"];
+export type UpdateStatus = Schemas["UpdateStatus"];

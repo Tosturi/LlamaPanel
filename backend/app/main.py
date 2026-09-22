@@ -3,7 +3,7 @@ import asyncio
 from typing import AsyncIterator, Optional
 
 from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
@@ -13,6 +13,8 @@ from app.llama_client import LlamaClient
 from app.presets import PresetStore
 from app.routers import models, presets, server, instances
 from app.routers import settings as settings_router
+from app.routers import updates as updates_router
+from app.updates import UpdateService
 from app.instances import InstanceRegistry
 from app.schemas import HealthResponse
 from app.settings import Settings
@@ -33,6 +35,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         client = LlamaClient()
         app.state.settings = settings
         app.state.native_picker_lock = asyncio.Lock()
+        app.state.updates = UpdateService(app)
         # Lazy: the binary is probed on the first request that needs the
         # flag schema, not here, so a missing llama-server never blocks
         # panel startup (the bundled --help snapshot stands in).
@@ -48,6 +51,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         try:
             yield
         finally:
+            await app.state.updates.close()
             await app.state.instances.shutdown()
             await client.aclose()
 
@@ -58,6 +62,16 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.include_router(instances.router)
     app.include_router(presets.router)
     app.include_router(settings_router.router)
+    app.include_router(updates_router.router)
+
+    @app.middleware('http')
+    async def activation_guard(request, call_next):
+        service = getattr(app.state, 'updates', None)
+        if service and (service.phase == 'restarting' or
+                        (not service.unavailable_reason() and (service.directory / 'activation.json').exists())):
+            if request.url.path.startswith('/api/') and request.url.path not in ('/api/health', '/api/updates', '/api/updates/ready'):
+                return JSONResponse({'detail': 'Panel update in progress'}, status_code=503)
+        return await call_next(request)
 
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:

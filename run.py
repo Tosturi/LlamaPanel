@@ -61,20 +61,6 @@ def ensure_venv_and_reexec() -> None:
     sys.exit(result)
 
 
-def ensure_dependencies() -> None:
-    try:
-        import fastapi  # noqa: F401
-        import httpx  # noqa: F401
-        import psutil  # noqa: F401
-        import uvicorn  # noqa: F401
-    except ImportError:
-        print("Installing backend dependencies into the venv...", flush=True)
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install",
-            "-r", str(BACKEND / "requirements.txt"),
-        ])
-
-
 def check_python_version() -> None:
     if sys.version_info < (3, 12):
         sys.exit(
@@ -84,10 +70,16 @@ def check_python_version() -> None:
         )
 
 
-def main() -> None:
+def run() -> None:
     check_python_version()
-    ensure_venv_and_reexec()  # from here on, sys.executable is ./.venv's python
-    ensure_dependencies()
+    sys.path.insert(0, str(BACKEND))
+    from app.update_runtime import ensure_environment, supervise
+    managed = os.environ.get('LLAMAPANEL_MANAGED') == '1'
+    if not managed and (ROOT / 'release.json').is_file() and not (ROOT / '.git').exists() and '--reload' not in sys.argv and '--help' not in sys.argv and '-h' not in sys.argv:
+        sys.exit(supervise(ROOT, sys.argv[1:]))
+    if not managed:
+        ensure_venv_and_reexec()
+        ensure_environment(ROOT)
 
     parser = argparse.ArgumentParser(description="Run the LlamaPanel server.")
     parser.add_argument("--host", default=None, help="Bind address for the panel itself (default: 127.0.0.1)")
@@ -138,7 +130,21 @@ def main() -> None:
             app_dir=str(BACKEND), timeout_graceful_shutdown=5,
         )
     else:
-        uvicorn.run(create_app(settings), host=host, port=port, timeout_graceful_shutdown=5)
+        app = create_app(settings)
+        server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, timeout_graceful_shutdown=5))
+        if managed:
+            app.state.request_restart = lambda: setattr(server, 'should_exit', True)
+        server.run()
+
+
+def main() -> None:
+    if os.environ.get('LLAMAPANEL_MANAGED') == '1':
+        sys.path.insert(0, str(BACKEND))
+        from app.update_runtime import worker_guard
+        with worker_guard(Path(os.environ['LLAMAPANEL_INSTALL_ROOT']), os.environ['LLAMAPANEL_LAUNCH_TOKEN']):
+            run()
+    else:
+        run()
 
 
 if __name__ == "__main__":
