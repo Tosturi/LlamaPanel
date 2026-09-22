@@ -97,10 +97,13 @@ def extract_release(archive: Path, destination: Path, expected_version: str):
         if len(infos) > 20000 or sum(item.file_size for item in infos) > MAX_EXPANDED:
             raise ValueError('Release archive is too large')
         for item in infos:
-            path = PurePosixPath(item.filename)
+            # ZipInfo normalizes backslashes on Windows and truncates NULs.
+            # Validate the original archive name before those transformations.
+            name = item.orig_filename
+            path = PurePosixPath(name)
             parts = path.parts
-            if (not parts or parts[0] != 'LlamaPanel' or '..' in parts or '\\' in item.filename
-                    or ':' in item.filename or any(p.endswith((' ', '.')) for p in parts)
+            if (not parts or parts[0] != 'LlamaPanel' or '..' in parts or '\\' in name
+                    or '\x00' in name or ':' in name or any(p.endswith((' ', '.')) for p in parts)
                     or stat.S_ISLNK(item.external_attr >> 16)):
                 raise ValueError('Unsafe archive path')
             normalized = str(path).casefold()

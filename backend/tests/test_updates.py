@@ -39,7 +39,15 @@ def archive_bytes(extra=None, manifest=None):
         for name, value in files.items():
             bundle.writestr('LlamaPanel/' + name, value)
         if extra:
-            bundle.writestr(*extra)
+            name, value = extra
+            if isinstance(name, str):
+                # Write the actual hostile bytes, bypassing ZipInfo's native
+                # separator normalization and NUL truncation on construction.
+                entry = zipfile.ZipInfo()
+                entry.filename = name
+            else:
+                entry = name
+            bundle.writestr(entry, value)
     return stream.getvalue()
 
 
@@ -61,10 +69,13 @@ def test_reject_invalid_release(change):
 
 @pytest.mark.parametrize('path', ['../escape', '/absolute', 'LlamaPanel/../../escape',
     'LlamaPanel/backend/app/evil\\path', 'LlamaPanel/backend/app/file:stream',
+    'LlamaPanel/backend/app/file\x00hidden',
     'LlamaPanel/backend/app/file.', 'LlamaPanel/VERSION', 'LlamaPanel/version', 'LlamaPanel/.venv/config'])
 def test_reject_archive_paths(tmp_path, path):
     archive = tmp_path / 'release.zip'
     archive.write_bytes(archive_bytes((path, 'bad')))
+    with zipfile.ZipFile(archive) as bundle:
+        assert bundle.infolist()[-1].orig_filename == path
     with pytest.raises(ValueError):
         updates.extract_release(archive, tmp_path / 'out', '9.0.0')
     assert not (tmp_path / 'out').exists()
