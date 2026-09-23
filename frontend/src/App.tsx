@@ -418,12 +418,8 @@ function ServerWorkspace({
                     : "Choose a model and make it your own."}
                 </p>
               </div>
-              <span className="badge">Port {instance.port}</span>
             </div>
             <div className="instance-toolbar">
-              <span className="muted">
-                Port {instance.port} is reserved for this instance.
-              </span>
               <button
                 onClick={() => {
                   setSaveMessage("");
@@ -714,14 +710,6 @@ function ServerWorkspace({
                 </p>
               </div>
             </div>
-            <section className="panel">
-              <h2>Manage presets</h2>
-              <p className="muted">
-                Save the current configuration, or load a preset to edit it
-                before starting.
-              </p>
-              {presetBar}
-            </section>
             <div className="library-grid">
               {presets.map((p) => (
                 <article className="panel" key={p.name}>

@@ -99,11 +99,12 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
     finally { pickingRef.current = false; setPicking(false); browseButton.current?.focus(); }
   };
   return <div className="app studio">
-    <header className="app-header"><div className="brand"><span className="brand-mark">L/</span>LlamaPanel</div><span>Settings</span></header>
+    <header className="app-header"><div className="brand"><span className="brand-mark">L/</span>LlamaPanel</div></header>
     <main>
-      <button onClick={onBack} disabled={pending || picking || updateBusy}>← Back</button>
-      <div className="page-heading"><div><h1>Settings</h1>
-        <p className="muted">Shared libraries and runtime for all servers.</p></div></div>
+      <div className="page-heading settings-heading">
+        <button onClick={onBack} disabled={pending || picking || updateBusy}>← Back</button>
+        <h1>Settings</h1>
+      </div>
       {error && <p className="error-banner" role="alert">{error}</p>}
       {!values && !error && <p role="status">Loading settings…</p>}
       {values && settings && <form className="panel settings-form" onSubmit={async e => {
