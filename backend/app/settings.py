@@ -116,7 +116,8 @@ class Settings:
         for key in ("models_dir", "loras_dir"):
             path = Path(values[key]).expanduser()
             # Defaults are install-relative; user paths must be absolute.
-            values[key] = (path if path.is_absolute() else ROOT / path).resolve()
+            install_root = Path(os.environ.get('LLAMAPANEL_INSTALL_ROOT', ROOT))
+            values[key] = (path if path.is_absolute() else install_root / path).resolve()
         values["port"] = int(values["port"])
         if not 1 <= values["port"] <= 65535:
             raise ValueError("Panel port must be between 1 and 65535")

@@ -66,6 +66,7 @@ jobs:
           mkdir -p "${stage}/backend" "${stage}/frontend"
 
           cp run.py VERSION README.md settings.defaults.json "${stage}/"
+          python -c 'import json,sys; from pathlib import Path; Path(sys.argv[1]).write_text(json.dumps({"updater_protocol": 1, "python_min": [3, 12]}))' "${stage}/release.json"
           cp -r docs "${stage}/docs"
           [ -f LICENSE ] && cp LICENSE "${stage}/" || true
           cp backend/requirements.txt "${stage}/backend/"

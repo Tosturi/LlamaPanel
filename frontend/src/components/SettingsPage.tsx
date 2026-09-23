@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
+import { UpdatePanel } from './UpdatePanel';
 import type { BrowserView, SettingsUpdate, SettingsView } from '../types';
 
 const fields = [
@@ -74,6 +75,7 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [pending, setPending] = useState(false);
+  const [updateBusy, setUpdateBusy] = useState(false);
   const [picking, setPicking] = useState(false);
   const pickingRef = useRef(false);
   const [browser, setBrowser] = useState<keyof SettingsUpdate | null>(null);
@@ -99,7 +101,7 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
   return <div className="app studio">
     <header className="app-header"><div className="brand"><span className="brand-mark">L/</span>LlamaPanel</div><span>Settings</span></header>
     <main>
-      <button onClick={onBack} disabled={pending || picking}>← Back</button>
+      <button onClick={onBack} disabled={pending || picking || updateBusy}>← Back</button>
       <div className="page-heading"><div><h1>Settings</h1>
         <p className="muted">Shared libraries and runtime for all servers.</p></div></div>
       {error && <p className="error-banner" role="alert">{error}</p>}
@@ -116,19 +118,20 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
         {fields.map(([key, label]) => <div key={key}>
           <label className="field-label" htmlFor={`settings-${key}`}>{label}</label>
           <div className="settings-path-row">
-            <input id={`settings-${key}`} required value={values[key]} disabled={pending || picking || settings.locked_fields.includes(key)}
+            <input id={`settings-${key}`} required value={values[key]} disabled={pending || picking || updateBusy || settings.locked_fields.includes(key)}
               onChange={e => { setValues({...values, [key]:e.target.value}); setMessage(''); }} />
-            <button type="button" disabled={pending || picking || settings.locked_fields.includes(key)} aria-label={`Browse ${label}`}
+            <button type="button" disabled={pending || picking || updateBusy || settings.locked_fields.includes(key)} aria-label={`Browse ${label}`}
               onClick={e => { browseButton.current = e.currentTarget; browse(key); }}>Browse…</button>
           </div>
           {settings.locked_fields.includes(key) && <p className="muted">Set by a launch argument or environment variable.</p>}
         </div>)}
         <p className="muted">Choose paths on the backend machine. The executable is used for future starts and restarts. Already queued restarts keep their original configuration.</p>
         <p className="muted">Settings, presets and logs: <code className="file-path">{settings.data_dir}</code></p>
-        <button className="primary" disabled={pending || picking || browser !== null}>{pending ? 'Saving…' : 'Save settings'}</button>
+        <button className="primary" disabled={pending || picking || updateBusy || browser !== null}>{pending ? 'Saving…' : 'Save settings'}</button>
         {picking && <p role="status">Choose a path in the system dialog…</p>}
         <p role="status">{message}</p>
       </form>}
+      <UpdatePanel onBusy={setUpdateBusy} disabled={pending || picking || browser !== null || !values || !settings || fields.some(([key]) => values[key] !== settings[key])} />
       {browser && values && <PathBrowser key={browser} mode={browser === 'server_bin' ? 'file' : 'directory'}
         onClose={closeBrowser} onSelect={path => { setValues({...values,[browser]:path}); setMessage(''); closeBrowser(); }} />}
     </main>

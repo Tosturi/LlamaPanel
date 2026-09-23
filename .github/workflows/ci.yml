@@ -34,6 +34,24 @@ jobs:
         working-directory: backend
         run: pytest -v
 
+  updater-platforms:
+    name: Updater (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r backend/requirements-dev.txt
+      - name: Check updater and rollback
+        working-directory: backend
+        run: pytest -v tests/test_updates.py
+
   frontend:
     name: Frontend typecheck & build
     runs-on: ubuntu-latest
