@@ -65,6 +65,8 @@ async def install(body: InstallRequest, request: Request):
         raise HTTPException(403, 'Same-origin request required')
     if request.app.state.native_picker_lock.locked():
         raise HTTPException(409, 'Close the file picker before updating')
+    if request.app.state.model_downloads.busy:
+        raise HTTPException(409, 'Finish or cancel the model download before updating')
     try:
         request.app.state.updates.start(body.version)
     except (ValueError, OSError) as exc:

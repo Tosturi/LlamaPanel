@@ -223,6 +223,17 @@ def _read_all(paths: list[Path]) -> dict[Path, dict]:
 
 
 def scan(directory: Path) -> list[ModelInfo]:
+    models = _scan_flat(directory)
+    store = directory / '.hf-models'
+    if store.is_dir() and not store.is_symlink():
+        for child in sorted(store.iterdir()):
+            if re.fullmatch(r'[a-f0-9]{24}', child.name) and child.is_dir() and not child.is_symlink():
+                for model in _scan_flat(child):
+                    models.append(model.model_copy(update={'id': f'hf/{child.name}/{model.id}'}))
+    return models
+
+
+def _scan_flat(directory: Path) -> list[ModelInfo]:
     """Models in `directory` (top level only). LoRA adapters that live next
     to them are left out - see scan_loras()."""
     if not directory.exists():

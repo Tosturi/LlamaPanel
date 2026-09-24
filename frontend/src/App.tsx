@@ -6,6 +6,7 @@ import type { InstanceView } from "./types";
 import { FlagsForm } from "./components/FlagsForm";
 import { LogViewer } from "./components/LogViewer";
 import { ModelList } from "./components/ModelList";
+import { ModelDownload } from "./components/ModelDownload";
 import { PresetBar } from "./components/PresetBar";
 import { ServerControls } from "./components/ServerControls";
 import type {
@@ -650,6 +651,7 @@ function ServerWorkspace({
                 {modelsLoading ? "Scanning…" : "Rescan library"}
               </button>
             </div>
+            {page === "models" && <ModelDownload onComplete={loadModels} />}
             <label className="search-label">
               Search {page === "models" ? "models" : "adapters"}
               <input

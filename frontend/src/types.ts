@@ -6,6 +6,8 @@
 import type { components } from "./api-types";
 
 type Schemas = components["schemas"];
+export type DownloadPlan = Schemas["DownloadPlan"];
+export type DownloadStatus = Schemas["DownloadStatus"];
 
 export type ModelPart = Schemas["ModelPart"];
 export type ModelInfo = Schemas["ModelInfo"];

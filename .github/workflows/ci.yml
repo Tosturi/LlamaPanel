@@ -50,7 +50,7 @@ jobs:
         run: pip install -r backend/requirements-dev.txt
       - name: Check updater and rollback
         working-directory: backend
-        run: pytest -v tests/test_updates.py
+        run: pytest -v tests/test_updates.py tests/test_model_downloads.py
 
   frontend:
     name: Frontend typecheck & build
