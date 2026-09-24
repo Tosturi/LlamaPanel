@@ -32,11 +32,11 @@ def safe_path(name):
     return name
 
 
-def candidates(data, quant):
+def candidates(data, quant, projector=False):
     groups = {}
     for sibling in data.get('siblings', []):
         name = sibling['rfilename']
-        if not name.lower().endswith('.gguf') or 'mmproj' in name.lower():
+        if not name.lower().endswith('.gguf') or ('mmproj' in PurePosixPath(name).name.lower()) != projector:
             continue
         # Match llama.cpp's tag search: case-insensitive tag followed by . or -.
         # In particular, Bonsai's TQ1_0 shorthand also matches PTQ1_0 filenames.
@@ -60,7 +60,7 @@ def candidates(data, quant):
             if [f['path'].lower() for f in files] != [p.lower() for p in expected]:
                 raise ValueError('The repository is missing split model parts.')
         result.append({'name': name, 'files': files, 'size': sum(f['size'] for f in files)})
-    if not result:
+    if not result and not projector:
         raise ValueError('No matching GGUF model found. Check the repository and quantization.')
     return result
 
@@ -117,19 +117,25 @@ class ModelDownloads:
         revision = data.get('sha', '')
         if not re.fullmatch('[a-f0-9]{40}', revision):
             raise ValueError('Cannot resolve a fixed repository revision.')
-        plan = {'id': uuid4().hex, 'repository': repo, 'revision': revision, 'choices': candidates(data, quant)}
+        plan = {'id': uuid4().hex, 'repository': repo, 'revision': revision,
+                'choices': candidates(data, quant), 'projectors': candidates(data, None, projector=True)}
         self.plan = plan
         return plan
 
-    def start(self, plan_id, choice, directory):
+    def start(self, plan_id, choice, directory, projector=None):
         if self.busy:
             raise ValueError('A model download is already running.')
         if not self.plan or self.plan['id'] != plan_id or not 0 <= choice < len(self.plan['choices']):
             raise ValueError('Preview this repository again before downloading.')
         plan, model = self.plan, self.plan['choices'][choice]
+        if projector is not None:
+            if not 0 <= projector < len(plan.get('projectors', [])):
+                raise ValueError('Select an available projector from the preview.')
+            model = dict(model, projector=plan['projectors'][projector])
         directory = directory.resolve()
         self.state = {'id': uuid4().hex, 'phase': 'downloading', 'name': model['name'],
-                      'directory': str(directory), 'downloaded': 0, 'total': model['size'], 'message': ''}
+                      'directory': str(directory), 'downloaded': 0,
+                      'total': model['size'] + model.get('projector', {}).get('size', 0), 'message': ''}
         self.task = asyncio.create_task(self.download(plan, model, directory))
 
     async def download(self, plan, model, directory):
@@ -141,20 +147,31 @@ class ModelDownloads:
                 raise ValueError('The download storage directory cannot be a symlink.')
             identity = hashlib.sha256(f"{plan['repository']}@{plan['revision']}:{model['name']}".encode()).hexdigest()[:24]
             target = store / identity
-            if target.exists():
+            projector = model.get('projector')
+            projector_dir = ('projector-' + hashlib.sha256(projector['name'].encode()).hexdigest()[:16]) if projector else None
+            append_projector = target.exists() and projector is not None
+            if target.is_symlink():
+                raise ValueError('The model directory cannot be a symlink.')
+            if target.exists() and (not projector or (target / projector_dir).exists()):
                 raise ValueError('This model revision is already downloaded.')
-            if shutil.disk_usage(store).free < model['size'] + 64 * 1024 * 1024:
+            files = [] if append_projector else [(f, None) for f in model['files']]
+            if projector:
+                files += [(f, projector_dir) for f in projector['files']]
+            self.state['total'] = sum(f['size'] for f, _ in files)
+            if shutil.disk_usage(store).free < self.state['total'] + 64 * 1024 * 1024:
                 raise ValueError('Not enough free disk space.')
             stage = store / ('.partial-' + self.state['id'])
             stage.mkdir()
             async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=20), headers={'Accept-Encoding': 'identity'}) as client:
-                for file in model['files']:
+                for file, subdir in files:
                     self.state['message'] = PurePosixPath(file['path']).name
                     url = f"https://huggingface.co/{plan['repository']}/resolve/{plan['revision']}/{quote(file['path'], safe='/')}"
                     response = await stream_hf(client, url)
                     digest, received = hashlib.sha256(), 0
                     filename = PurePosixPath(file['path']).name
-                    destination = stage / (filename[:-5] + '.gguf')
+                    folder = stage / subdir if subdir else stage
+                    folder.mkdir(exist_ok=True)
+                    destination = folder / (filename[:-5] + '.gguf')
                     try:
                         with destination.open('xb') as output:
                             async for chunk in response.aiter_bytes(1024 * 1024):
@@ -173,8 +190,14 @@ class ModelDownloads:
                     with destination.open('rb') as check:
                         if check.read(4) != b'GGUF':
                             raise ValueError('Downloaded file is not GGUF.')
-            stage.rename(target)
-            self.state.update(phase='complete', message='Model added to the library.')
+            if append_projector:
+                (stage / projector_dir).rename(target / projector_dir)
+            else:
+                stage.rename(target)
+            message = 'Model added to the library.'
+            if projector:
+                message += f' Projector saved to {target / projector_dir}.'
+            self.state.update(phase='complete', message=message)
         except asyncio.CancelledError:
             self.state.update(phase='cancelled', message='Download cancelled.')
         except (OSError, ValueError, httpx.HTTPError) as exc:

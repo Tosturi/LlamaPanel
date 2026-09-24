@@ -23,7 +23,20 @@ insensitive and follows llama.cpp's tag search (tag followed by `.` or `-`).
 Thus `TQ1_0` also matches Bonsai's `PTQ1_0` filenames. Review shows the exact
 filenames and lets you choose when more than one model matches.
 Split GGUF models download as one group, including every numbered part.
-Multimodal projection files (`mmproj`) are not downloaded by this flow.
+If the repository contains separate `mmproj` GGUF files, enable **Download mmproj**.
+When several projectors exist, select the file explicitly; the preview includes
+its size in the total. If none are found, the checkbox is disabled and hovering
+over it explains why. Projector selection is independent of model quantization.
+Projectors are stored in a separate subdirectory beside the downloaded model,
+and their directory is shown after completion. They do not appear as standalone
+model cards. Configure the appropriate `--mmproj` path when starting your server;
+downloading a projector does not change existing server configurations.
+You can repeat the preview with the checkbox enabled to add a projector to the
+same already downloaded model revision without downloading the model again.
+
+Status is fetched once when the Models screen opens and after user actions.
+Only active downloads are polled, every five seconds, and only while that
+workspace and browser tab are visible. Returning to the screen refreshes status.
 
 ## Storage and failures
 

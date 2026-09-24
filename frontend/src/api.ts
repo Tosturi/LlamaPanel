@@ -46,7 +46,7 @@ function post<T>(path: string, body?: unknown): Promise<T> {
 
 export const api = {
   resolveModelDownload: (source: string) => post<DownloadPlan>('/api/model-downloads/resolve', { source }),
-  startModelDownload: (plan_id: string, choice: number) => post<DownloadStatus>('/api/model-downloads', { plan_id, choice }),
+  startModelDownload: (plan_id: string, choice: number, projector: number | null = null) => post<DownloadStatus>('/api/model-downloads', { plan_id, choice, projector }),
   cancelModelDownload: () => post<DownloadStatus>('/api/model-downloads/cancel'),
   modelDownloadStatus: () => fetch('/api/model-downloads', { cache: 'no-store', signal: AbortSignal.timeout(5000) }).then(r => json<DownloadStatus>(r)),
   getUpdateStatus: () => fetch('/api/updates', { cache: 'no-store', signal: AbortSignal.timeout(5000) }).then(r => json<UpdateStatus>(r)),

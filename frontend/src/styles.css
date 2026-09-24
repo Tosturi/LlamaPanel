@@ -263,6 +263,9 @@ dialog.path-browser::backdrop { background: #0009; }
 .download-form { margin-top: 16px; }
 .download-form select, .download-form progress { width: 100%; }
 .download-files { overflow-wrap: anywhere; padding-left: 20px; }
+.projector-option { position: relative; display: block; width: fit-content; margin: 16px 0; }
+.projector-tip { display: none; position: absolute; left: 0; bottom: 100%; width: 260px; max-width: 70vw; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); z-index: 5; }
+.projector-option:hover .projector-tip, .projector-option:focus .projector-tip { display: block; }
 .release-notes { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 360px; overflow: auto; }
 .instance-form { margin-bottom: 24px; max-width: 640px; }
 .workspace-header { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }

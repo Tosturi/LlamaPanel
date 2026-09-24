@@ -37,6 +37,60 @@ def test_quantization_and_split():
         downloads.candidates(data, 'Q8_0')
 
 
+def test_projectors_ignore_model_quantization():
+    data = metadata(['model-Q8_0.gguf', 'mmproj-F16.gguf', 'mmproj-Q5_0.gguf'])
+    assert len(downloads.candidates(data, 'Q8_0')) == 1
+    assert len(downloads.candidates(data, None, projector=True)) == 2
+    assert downloads.candidates(metadata(['model.gguf']), None, projector=True) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('append', [False, True])
+async def test_projector_download_without_duplicate_models(tmp_path, monkeypatch, append):
+    calls = []
+    def handler(request):
+        if '/api/' in request.url.path:
+            return httpx.Response(200, json=metadata(['model-Q8_0.gguf', 'mmproj-F16.gguf']))
+        calls.append(request.url.path)
+        return httpx.Response(200, content=GGUF)
+    mock_hf(monkeypatch, handler)
+    service = downloads.ModelDownloads()
+    plan = await service.resolve('org/repo:Q8_0')
+    assert len(plan['projectors']) == 1
+    if append:
+        service.start(plan['id'], 0, tmp_path)
+        await service.task
+        calls.clear()
+    service.start(plan['id'], 0, tmp_path, projector=0)
+    await service.task
+    assert service.state['phase'] == 'complete'
+    assert len(calls) == (1 if append else 2)
+    assert service.state['downloaded'] == service.state['total'] == len(GGUF) * len(calls)
+    assert len(scan(tmp_path)) == 1
+    assert len(list((tmp_path / downloads.STORE).glob('*/projector-*/*.gguf'))) == 1
+    with pytest.raises(ValueError, match='available projector'):
+        service.start(plan['id'], 0, tmp_path, projector=10)
+
+
+@pytest.mark.asyncio
+async def test_projector_failure_preserves_existing_model(tmp_path, monkeypatch):
+    def handler(request):
+        if '/api/' in request.url.path:
+            return httpx.Response(200, json=metadata(['model.gguf', 'mmproj.gguf']))
+        return httpx.Response(200, content=b'corrupt' if 'mmproj' in request.url.path else GGUF)
+    mock_hf(monkeypatch, handler)
+    service = downloads.ModelDownloads()
+    plan = await service.resolve('org/repo')
+    service.start(plan['id'], 0, tmp_path)
+    await service.task
+    before = scan(tmp_path)[0]
+    service.start(plan['id'], 0, tmp_path, projector=0)
+    await service.task
+    assert service.state['phase'] == 'failed'
+    assert scan(tmp_path) == [before]
+    assert not list((tmp_path / downloads.STORE).glob('*/projector-*'))
+
+
 @pytest.mark.parametrize('path', ['../escape.gguf', '/escape.gguf', 'folder\\file.gguf', 'CON.gguf', 'file:stream.gguf', 'folder./x.gguf'])
 def test_unsafe_paths(path):
     with pytest.raises(ValueError):
