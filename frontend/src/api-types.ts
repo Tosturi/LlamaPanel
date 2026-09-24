@@ -488,6 +488,11 @@ export interface components {
             choices: components["schemas"]["DownloadChoice"][];
             /** Id */
             id: string;
+            /**
+             * Projectors
+             * @default []
+             */
+            projectors: components["schemas"]["DownloadChoice"][];
             /** Repository */
             repository: string;
             /** Revision */
@@ -499,6 +504,8 @@ export interface components {
             choice: number;
             /** Plan Id */
             plan_id: string;
+            /** Projector */
+            projector?: number | null;
         };
         /** DownloadStatus */
         DownloadStatus: {

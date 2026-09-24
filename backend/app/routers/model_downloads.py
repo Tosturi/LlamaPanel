@@ -27,6 +27,7 @@ class DownloadPlan(ResponseModel):
     repository: str
     revision: str
     choices: list[DownloadChoice]
+    projectors: list[DownloadChoice] = []
 
 
 class DownloadStatus(ResponseModel):
@@ -46,6 +47,7 @@ class ResolveRequest(BaseModel):
 class DownloadRequest(BaseModel):
     plan_id: str
     choice: int = Field(ge=0)
+    projector: int | None = Field(default=None, ge=0)
 
 
 def guard(request):
@@ -76,7 +78,7 @@ async def start(body: DownloadRequest, request: Request):
         raise HTTPException(409, 'Wait for the application update to finish.')
     service = request.app.state.model_downloads
     try:
-        service.start(body.plan_id, body.choice, request.app.state.settings.models_dir)
+        service.start(body.plan_id, body.choice, request.app.state.settings.models_dir, body.projector)
     except ValueError as exc:
         raise HTTPException(409, str(exc))
     return service.state

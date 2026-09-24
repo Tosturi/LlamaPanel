@@ -38,12 +38,14 @@ function ServerWorkspace({
   navigation,
   onSettings,
   settingsRevision,
+  active,
 }: {
   instance: InstanceView;
   onBack: () => void;
   navigation: { id: string; view: "configuration" | "logs" } | null;
   onSettings: () => void;
   settingsRevision: number;
+  active: boolean;
 }) {
   const api = useMemo(() => instanceApi(instance.id), [instance.id]);
   const [saveMessage, setSaveMessage] = useState("");
@@ -651,7 +653,7 @@ function ServerWorkspace({
                 {modelsLoading ? "Scanning…" : "Rescan library"}
               </button>
             </div>
-            {page === "models" && <ModelDownload onComplete={loadModels} />}
+            {page === "models" && <ModelDownload active={active} onComplete={loadModels} />}
             <label className="search-label">
               Search {page === "models" ? "models" : "adapters"}
               <input
@@ -820,6 +822,7 @@ export default function App() {
         .map((item) => (
           <div key={item.id} hidden={selected !== item.id}>
             <ServerWorkspace
+              active={!showSettings && selected === item.id}
               instance={item}
               navigation={navigation}
               onSettings={() => setShowSettings(true)}

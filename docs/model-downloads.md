@@ -23,14 +23,36 @@ insensitive and follows llama.cpp's tag search (tag followed by `.` or `-`).
 Thus `TQ1_0` also matches Bonsai's `PTQ1_0` filenames. Review shows the exact
 filenames and lets you choose when more than one model matches.
 Split GGUF models download as one group, including every numbered part.
-Multimodal projection files (`mmproj`) are not downloaded by this flow.
+If the repository contains separate `mmproj` GGUF files, enable **Download mmproj**.
+When several projectors exist, select the file explicitly; the preview includes
+its size in the total. If none are found, the checkbox is disabled and hovering
+over it explains why. Projector selection is independent of model quantization.
+Projectors are stored in a separate subdirectory beside the downloaded model,
+and their directory is shown after completion. They do not appear as standalone
+model cards. Configure the appropriate `--mmproj` path when starting your server;
+downloading a projector does not change existing server configurations.
+You can repeat the preview with the checkbox enabled to add a projector to the
+same already downloaded model revision without downloading the model again.
+
+Status is fetched once when the Models screen opens and after user actions.
+Only active downloads are polled, every five seconds, and only while that
+workspace and browser tab are visible. Returning to the screen refreshes status.
 
 ## Storage and failures
 
-Completed downloads live in `<models directory>/.hf-models/<model revision id>/`.
+New downloads live in `<models directory>/<author>/<repository>/<quantization>/`,
+for example `models/unsloth/Qwen3.8-27B-GGUF/Q4_K_M/`. The quantization is taken
+from the selected filename; unrecognized formats use the model filename without
+the GGUF extension. Split model parts stay together. If that directory belongs
+to another file group, revision, or a manually placed model, a deterministic
+suffix is added instead of overwriting it. A small `.llamapanel-download` marker
+identifies managed directories; keep it alongside the model files.
+
 The library scans these managed directories as well as existing top-level GGUF
-files. Names remain based on filenames; IDs include the managed directory to
-distinguish different repositories or revisions with identical filenames.
+files. Older downloads in `.hf-models/<model revision id>/` remain supported in
+place, preserving saved paths and model IDs. Names remain based on filenames;
+IDs include the managed directory to distinguish identical filenames.
+The download progress reports the actual destination directory.
 The download directory is captured when Download is clicked; changing Settings
 afterwards does not move an active download.
 
