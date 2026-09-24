@@ -56,6 +56,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/instances/{id}/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Runtime */
+        get: operations["get_runtime_api_instances__id__runtime_get"];
+        /** Select Runtime */
+        put: operations["select_runtime_api_instances__id__runtime_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/loras": {
         parameters: {
             query?: never;
@@ -615,6 +633,11 @@ export interface components {
              * @default 8080
              */
             port: number;
+            /**
+             * Runtime Id
+             * @default default
+             */
+            runtime_id: string;
         };
         /** InstanceView */
         InstanceView: {
@@ -630,6 +653,8 @@ export interface components {
             name: string;
             /** Port */
             port: number;
+            /** Runtime Id */
+            runtime_id: string;
             status: components["schemas"]["StatusResponse"];
         };
         /**
@@ -793,12 +818,36 @@ export interface components {
             result: "applied" | "queued";
             status: components["schemas"]["StatusResponse"];
         };
+        /** RuntimeConfig */
+        RuntimeConfig: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Server Bin */
+            server_bin: string;
+        };
+        /** RuntimeSelection */
+        RuntimeSelection: {
+            /** Runtime Id */
+            runtime_id: string;
+        };
+        /** RuntimeView */
+        RuntimeView: {
+            binary: components["schemas"]["BinaryInfo"];
+            /** Flags */
+            flags: components["schemas"]["FlagDef"][];
+            /** Runtime Id */
+            runtime_id: string;
+        };
         /** SettingsUpdate */
         SettingsUpdate: {
             /** Loras Dir */
             loras_dir: string;
             /** Models Dir */
             models_dir: string;
+            /** Runtimes */
+            runtimes?: components["schemas"]["RuntimeConfig"][];
             /** Server Bin */
             server_bin: string;
         };
@@ -814,6 +863,8 @@ export interface components {
             models_dir: string;
             /** Needs Setup */
             needs_setup: boolean;
+            /** Runtimes */
+            runtimes: components["schemas"]["RuntimeConfig"][];
             /** Server Bin */
             server_bin: string;
         };
@@ -1046,6 +1097,72 @@ export interface operations {
             };
         };
     };
+    get_runtime_api_instances__id__runtime_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    select_runtime_api_instances__id__runtime_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeSelection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_loras_api_loras_get: {
         parameters: {
             query?: never;
@@ -1194,7 +1311,9 @@ export interface operations {
     };
     list_presets_api_presets_get: {
         parameters: {
-            query?: never;
+            query?: {
+                instance_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1210,11 +1329,22 @@ export interface operations {
                     "application/json": components["schemas"]["Preset"][];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     save_preset_api_presets__name__put: {
         parameters: {
-            query?: never;
+            query?: {
+                instance_id?: string;
+            };
             header?: never;
             path: {
                 name: string;
@@ -1249,7 +1379,9 @@ export interface operations {
     };
     delete_preset_api_presets__name__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                instance_id?: string;
+            };
             header?: never;
             path: {
                 name: string;
@@ -1281,6 +1413,7 @@ export interface operations {
     get_binary_info_api_server_binary_get: {
         parameters: {
             query?: {
+                instance_id?: string;
                 refresh?: boolean;
             };
             header?: never;
@@ -1311,7 +1444,9 @@ export interface operations {
     };
     get_flag_schema_api_server_flags_get: {
         parameters: {
-            query?: never;
+            query?: {
+                instance_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1325,6 +1460,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FlagDef"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

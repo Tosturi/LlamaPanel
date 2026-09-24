@@ -19,6 +19,31 @@ running processes and already queued restarts retain their current configuration
 Only change the binary to a trusted llama-server build: the panel executes it
 to inspect its version and supported flags.
 
+## Multiple llama-server builds
+
+In **Settings → llama-server runtimes**, set the default executable and use
+**+ Add runtime** to add named alternatives, such as an experimental fork.
+Each entry has its own executable path and Browse button. Save the settings
+before choosing it in **Server → Overview → Runtime**.
+
+The Runtime selector saves the choice for that instance immediately and probes
+the selected binary again with `--version` and `--help`. The configuration form
+and preset compatibility use that runtime's flags. Other instances keep their
+own selection. Unsupported saved flags are retained, shown in Configuration,
+and omitted from the command line until a supporting runtime is selected.
+
+Existing instances and new instances use **Default llama-server** until changed.
+Changing a runtime or its path affects future starts and restarts; it does not
+stop a running process. An already queued restart keeps the executable and
+arguments captured when it was queued. A runtime selected by an instance cannot
+be removed until that instance selects another runtime.
+
+The named list is persisted in `settings.json`, while each instance stores its
+runtime ID in `instances.json`. Existing settings without a runtime list remain
+valid. CLI/environment overrides of `server_bin` apply to the default runtime.
+
+## Defaults and launch overrides
+
 `settings.defaults.json` ships with platform defaults. Relative default folders
 resolve against the installation directory; Windows uses `llama-server.exe`,
 Linux and macOS use `llama-server`. If no full path is given, the binary is

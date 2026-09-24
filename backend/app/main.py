@@ -42,6 +42,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         # Lazy: the binary is probed on the first request that needs the
         # flag schema, not here, so a missing llama-server never blocks
         # panel startup (the bundled --help snapshot stands in).
+        app.state.runtime_services = {}
         app.state.inspector = BinaryInspector(settings.server_bin)
         app.state.catalog = FlagCatalog(app.state.inspector)
         app.state.presets = PresetStore(settings.presets_file, resolve=app.state.catalog.resolve)

@@ -285,3 +285,10 @@ dialog.path-browser::backdrop { background: #0009; }
 @media (max-width: 600px) {
   .setup-card { align-items: flex-start; flex-direction: column; gap: 16px; }
 }
+
+.runtime-entry { display: grid; gap: 12px; padding-top: 24px; border-top: 1px solid var(--border); }
+.add-runtime { justify-self: start; }
+.runtime-select { width: auto; max-width: 100%; min-width: 220px; font-weight: 600; }
+.environment > div { min-width: 0; }
+.environment > code { max-width: 55%; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .environment > code { max-width: 100%; } }

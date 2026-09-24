@@ -15,6 +15,7 @@ import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Repository / install root: the directory holding run.py, VERSION, frontend/.
 ROOT = Path(__file__).resolve().parents[2]
@@ -64,11 +65,39 @@ def default_legacy_data_dirs() -> tuple[Path, ...]:
     return tuple(unique)
 
 
+class RuntimeConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    name: str = Field(min_length=1, max_length=100)
+    server_bin: str = Field(min_length=1, max_length=4096)
+
+    @field_validator("id", "name", "server_bin")
+    @classmethod
+    def nonblank(cls, value):
+        if not value.strip():
+            raise ValueError("Use a nonblank value")
+        return value.strip()
+
+
+def validate_runtimes(items):
+    if not isinstance(items, (list, tuple)):
+        raise ValueError("Runtimes must be a list")
+    runtimes = tuple(RuntimeConfig.model_validate(item) for item in items)
+    if any(r.id == "default" for r in runtimes):
+        raise ValueError("The default runtime ID is reserved")
+    if len({r.id for r in runtimes}) != len(runtimes):
+        raise ValueError("Runtime IDs must be unique")
+    if len({r.name.casefold() for r in runtimes}) != len(runtimes):
+        raise ValueError("Runtime names must be unique")
+    return runtimes
+
+
 @dataclass(frozen=True)
 class Settings:
     models_dir: Path = ROOT / "models"
     loras_dir: Path | None = None
     server_bin: str = "llama-server"
+    runtimes: tuple[RuntimeConfig, ...] = ()
     host: str = "127.0.0.1"
     port: int = 8000
     locked_fields: tuple[str, ...] = ()
@@ -105,7 +134,11 @@ class Settings:
         defaults.update(defaults.pop("platforms", {}).get(sys.platform, {}))
         data_dir = Path(overrides.pop("data_dir", None) or _env("DATA_DIR") or default_data_dir()).expanduser().resolve()
         saved = settings_store(data_dir).load()
-        if not isinstance(saved, dict) or any(k not in {"models_dir", "loras_dir", "server_bin"} or not isinstance(v, str) or not v.strip() for k, v in saved.items()):
+        if not isinstance(saved, dict):
+            raise ValueError("Invalid saved settings")
+        runtimes = validate_runtimes(saved.get("runtimes", []))
+        saved = {k: v for k, v in saved.items() if k != "runtimes"}
+        if any(k not in {"models_dir", "loras_dir", "server_bin"} or not isinstance(v, str) or not v.strip() for k, v in saved.items()):
             raise ValueError(f"Invalid settings in {data_dir / 'settings.json'}")
         values = {**defaults, **saved}
         env = {"models_dir": _env("MODELS_DIR", "LLAMA_MODELS_DIR"),
@@ -121,7 +154,7 @@ class Settings:
         values["port"] = int(values["port"])
         if not 1 <= values["port"] <= 65535:
             raise ValueError("Panel port must be between 1 and 65535")
-        return cls(**values, data_dir=data_dir,
+        return cls(**values, runtimes=runtimes, data_dir=data_dir,
                    locked_fields=tuple(k for k in explicit if k in {"models_dir", "loras_dir", "server_bin"}),
                    log_buffer_size=int(_env("LOG_BUFFER_SIZE") or 2000))
 
