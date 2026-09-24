@@ -76,6 +76,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/model-downloads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_model_downloads_get"];
+        put?: never;
+        /** Start */
+        post: operations["start_api_model_downloads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/model-downloads/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel */
+        post: operations["cancel_api_model_downloads_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/model-downloads/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve */
+        post: operations["resolve_api_model_downloads_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/models": {
         parameters: {
             query?: never;
@@ -412,6 +464,62 @@ export interface components {
             /** Deleted */
             deleted: string;
         };
+        /** DownloadChoice */
+        DownloadChoice: {
+            /** Files */
+            files: components["schemas"]["DownloadFile"][];
+            /** Name */
+            name: string;
+            /** Size */
+            size: number;
+        };
+        /** DownloadFile */
+        DownloadFile: {
+            /** Path */
+            path: string;
+            /** Sha256 */
+            sha256: string;
+            /** Size */
+            size: number;
+        };
+        /** DownloadPlan */
+        DownloadPlan: {
+            /** Choices */
+            choices: components["schemas"]["DownloadChoice"][];
+            /** Id */
+            id: string;
+            /** Repository */
+            repository: string;
+            /** Revision */
+            revision: string;
+        };
+        /** DownloadRequest */
+        DownloadRequest: {
+            /** Choice */
+            choice: number;
+            /** Plan Id */
+            plan_id: string;
+        };
+        /** DownloadStatus */
+        DownloadStatus: {
+            /** Directory */
+            directory: string;
+            /** Downloaded */
+            downloaded: number;
+            /** Id */
+            id: string;
+            /** Message */
+            message: string;
+            /** Name */
+            name: string;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "idle" | "downloading" | "complete" | "cancelled" | "failed";
+            /** Total */
+            total: number;
+        };
         /**
          * FlagDef
          * @description One form field. Built from the installed llama-server's --help plus
@@ -663,6 +771,11 @@ export interface components {
             unsupported: string[];
             /** Updated At */
             updated_at?: number | null;
+        };
+        /** ResolveRequest */
+        ResolveRequest: {
+            /** Source */
+            source: string;
         };
         /** RestartResponse */
         RestartResponse: {
@@ -942,6 +1055,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LoraInfo"][];
+                };
+            };
+        };
+    };
+    status_api_model_downloads_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadStatus"];
+                };
+            };
+        };
+    };
+    start_api_model_downloads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DownloadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_api_model_downloads_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadStatus"];
+                };
+            };
+        };
+    };
+    resolve_api_model_downloads_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

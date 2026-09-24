@@ -15,6 +15,8 @@ from app.routers import models, presets, server, instances
 from app.routers import settings as settings_router
 from app.routers import updates as updates_router
 from app.updates import UpdateService
+from app.model_downloads import ModelDownloads
+from app.routers import model_downloads
 from app.instances import InstanceRegistry
 from app.schemas import HealthResponse
 from app.settings import Settings
@@ -36,6 +38,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         app.state.settings = settings
         app.state.native_picker_lock = asyncio.Lock()
         app.state.updates = UpdateService(app)
+        app.state.model_downloads = ModelDownloads()
         # Lazy: the binary is probed on the first request that needs the
         # flag schema, not here, so a missing llama-server never blocks
         # panel startup (the bundled --help snapshot stands in).
@@ -51,6 +54,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         try:
             yield
         finally:
+            await app.state.model_downloads.cancel()
             await app.state.updates.close()
             await app.state.instances.shutdown()
             await client.aclose()
@@ -63,6 +67,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.include_router(presets.router)
     app.include_router(settings_router.router)
     app.include_router(updates_router.router)
+    app.include_router(model_downloads.router)
 
     @app.middleware('http')
     async def activation_guard(request, call_next):

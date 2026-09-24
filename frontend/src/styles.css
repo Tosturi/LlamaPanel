@@ -259,6 +259,10 @@ dialog.model-dialog::backdrop { background: #0009; }
 dialog.path-browser { margin: auto; width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; color: var(--text); box-sizing: border-box; }
 dialog.path-browser::backdrop { background: #0009; }
 .updates-panel { margin-top: 24px; }
+.model-download { margin-bottom: 24px; }
+.download-form { margin-top: 16px; }
+.download-form select, .download-form progress { width: 100%; }
+.download-files { overflow-wrap: anywhere; padding-left: 20px; }
 .release-notes { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 360px; overflow: auto; }
 .instance-form { margin-bottom: 24px; max-width: 640px; }
 .workspace-header { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
