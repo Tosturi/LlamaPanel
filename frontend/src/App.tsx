@@ -78,6 +78,11 @@ function ServerWorkspace({
     "start" | "stop" | "reload" | null
   >(null);
   const [version, setVersion] = useState<string | null>(null);
+  const [runtimeId, setRuntimeId] = useState(instance.runtime_id ?? "default");
+  const [runtimes, setRuntimes] = useState<import("./types").RuntimeConfig[]>([]);
+  const [runtimePending, setRuntimePending] = useState(false);
+  const [runtimeChanged, setRuntimeChanged] = useState(false);
+  const runtimeVersion = useRef(0);
   const [binary, setBinary] = useState<BinaryInfo | null>(null);
   // Flags of the last loaded preset that the installed llama-server
   // doesn't know; shown until the user dismisses or loads another preset.
@@ -122,18 +127,15 @@ function ServerWorkspace({
       .listPresets()
       .then((p) => { if (active) setPresets(p); })
       .catch((e) => { if (active) setError(String(e)); });
-    api
-      .getFlagSchema()
-      .then((s) => {
-        if (active) setSchema(s);
-      })
-      .catch((e) => { if (active) setError(String(e)); });
-    api
-      .getBinaryInfo()
-      .then((b) => { if (active) setBinary(b); })
-      .catch(() => {});
+    const seen = ++runtimeVersion.current;
+    globalApi.getSettings().then(s => {if (active) setRuntimes(s.runtimes);}).catch(e => {if (active) setError(String(e));});
+    instancesApi.runtime(instance.id).then(r => {
+      if (active && seen === runtimeVersion.current) {
+        setRuntimeId(r.runtime_id); setBinary(r.binary); setSchema(r.flags.filter(f => f.key !== "port"));
+      }
+    }).catch(e => {if (active) setError(String(e));});
     return () => { active = false; libraryVersion.current += 1; };
-  }, [settingsRevision]);
+  }, [settingsRevision, instance.runtime_id]);
 
   useEffect(() => {
     let disposed = false;
@@ -199,6 +201,18 @@ function ServerWorkspace({
     });
   };
 
+  const changeRuntime = async (id: string) => {
+    setRuntimePending(true); setError(null); ++runtimeVersion.current;
+    try {
+      const result = await instancesApi.selectRuntime(instance.id, id);
+      setRuntimeId(result.runtime_id); setBinary(result.binary);
+      setSchema(result.flags.filter(f => f.key !== "port"));
+      setRuntimeChanged(true);
+      setPresets(await api.listPresets());
+    } catch (e) { setError(String(e)); }
+    finally { setRuntimePending(false); }
+  };
+
   const handleStart = () => {
     if (!selectedId) return;
     setError(null);
@@ -206,6 +220,7 @@ function ServerWorkspace({
     api
       .startServer(selectedId, values)
       .then((s) => {
+        setRuntimeChanged(false);
         setSyncedPid(s.pid);
         applyActionStatus(s);
       })
@@ -230,6 +245,7 @@ function ServerWorkspace({
     api
       .restartServer(selectedId, values)
       .then((r) => {
+        setRuntimeChanged(false);
         setSyncedPid(r.status.pid);
         applyActionStatus(r.status);
       })
@@ -313,12 +329,15 @@ function ServerWorkspace({
       .catch((e) => setError(String(e)));
   };
 
+  const runtimeUnsupported = schema.length ? Object.keys(values).filter(key =>
+    values[key] !== null && values[key] !== "" && key !== "port" && !schema.some(f => f.key === key)
+  ) : [];
   const selectedModel = models.find((m) => m.id === selectedId);
   const live = status?.state === "running" || status?.state === "starting";
   const activeModel = models.find((m) => m.id === status?.model_id);
   const changed =
     live &&
-    (selectedId !== status?.model_id ||
+    (runtimeChanged || selectedId !== status?.model_id ||
       schema.some(
         (f) =>
           JSON.stringify(values[f.key] ?? null) !==
@@ -452,7 +471,7 @@ function ServerWorkspace({
                 canStart={
                   selectedId !== null && !connectionError && status !== null
                 }
-                pending={actionPending}
+                pending={runtimePending ? "reload" : actionPending}
                 onStart={handleStart}
                 onStop={handleStop}
                 onReload={handleReload}
@@ -548,12 +567,18 @@ function ServerWorkspace({
                 <section className="panel environment">
                   <div>
                     <p className="eyebrow">Runtime</p>
-                    <h2>llama-server</h2>
+                    <select className="runtime-select" aria-label="Server runtime" value={runtimeId}
+                      disabled={runtimePending || actionPending !== null} onChange={e => changeRuntime(e.target.value)}>
+                      <option value="default">Default llama-server</option>
+                      {runtimes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                    {live && <p className="muted">Used on the next start or restart.</p>}
+                    {runtimePending && <p className="muted" role="status">Reading runtime flags…</p>}
                     {binaryNotice ?? (
                       <p className="muted">Runtime information unavailable.</p>
                     )}
                   </div>
-                  <code>
+                  <code className="file-path">
                     {binary?.resolved_path ??
                       binary?.server_bin ??
                       "Binary path unavailable"}
@@ -599,6 +624,9 @@ function ServerWorkspace({
                   {!binary?.error && binaryNotice}
                 </div>
                 {binary?.error && binaryNotice}
+                {runtimeUnsupported.length > 0 && <p className="flags-notice warn" role="status">
+                  Not supported by this runtime (preserved): {runtimeUnsupported.join(", ")}
+                </p>}
                 {unsupported && (
                   <div className="flags-notice warn">
                     <span>

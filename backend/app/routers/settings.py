@@ -17,7 +17,7 @@ from app.flags import FlagCatalog
 from app.introspection import BinaryInspector
 from app.presets import PresetStore
 from app.schemas import ResponseModel
-from app.settings import settings_store
+from app.settings import settings_store, RuntimeConfig, validate_runtimes
 from app.native_picker import pick_path
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -60,12 +60,14 @@ class SettingsUpdate(BaseModel):
     models_dir: str = Field(min_length=1, max_length=4096)
     loras_dir: str = Field(min_length=1, max_length=4096)
     server_bin: str = Field(min_length=1, max_length=4096)
+    runtimes: list[RuntimeConfig] = Field(default_factory=list)
 
 
 class SettingsView(ResponseModel):
     models_dir: str
     loras_dir: str
     server_bin: str
+    runtimes: list[RuntimeConfig]
     data_dir: str
     locked_fields: list[str]
     needs_setup: bool
@@ -74,7 +76,7 @@ class SettingsView(ResponseModel):
 def view(settings):
     return SettingsView(models_dir=str(settings.models_dir),
                         loras_dir=str(settings.loras_dir or settings.models_dir / "loras"),
-                        server_bin=settings.server_bin, data_dir=str(settings.data_dir),
+                        server_bin=settings.server_bin, runtimes=list(settings.runtimes), data_dir=str(settings.data_dir),
                         locked_fields=list(settings.locked_fields),
                         needs_setup=(not settings.models_dir.is_dir()
                                      or not (settings.loras_dir or settings.models_dir / "loras").is_dir()
@@ -103,6 +105,15 @@ def validate_paths(update):
     if not resolved or not Path(resolved).is_file():
         raise HTTPException(422, "server_bin: executable was not found or is not executable")
     values["server_bin"] = str(Path(resolved).resolve())
+    try:
+        runtimes = validate_runtimes(values["runtimes"])
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    for runtime in runtimes:
+        resolved = shutil.which(os.path.expanduser(runtime.server_bin))
+        if not resolved or not Path(resolved).is_file():
+            raise HTTPException(422, f"{runtime.name}: executable was not found or is not executable")
+        next(r for r in values["runtimes"] if r["id"] == runtime.id)["server_bin"] = str(Path(resolved).resolve())
     return values
 
 
@@ -114,7 +125,13 @@ async def save_settings(update: SettingsUpdate, request: Request):
         for key in current.locked_fields:
             if getattr(update, key) != str(getattr(current, key)):
                 raise HTTPException(409, f"{key} is overridden by a launch argument or environment variable")
+        if "runtimes" not in update.model_fields_set:
+            update.runtimes = list(current.runtimes)
         values = await asyncio.to_thread(validate_paths, update)
+        ids = {r["id"] for r in values["runtimes"]} | {"default"}
+        used = [r.name for r in state.instances.records.values() if r.runtime_id not in ids]
+        if used:
+            raise HTTPException(409, "Runtime is used by: " + ", ".join(used) + ". Select another runtime first.")
         # Never persist launch-only overrides as user preferences.
         store = settings_store(current.data_dir)
         saved = await asyncio.to_thread(store.load)
@@ -124,11 +141,13 @@ async def save_settings(update: SettingsUpdate, request: Request):
         except OSError as exc:
             raise HTTPException(500, f"Could not save settings: {exc}")
         updated = dataclasses.replace(current, models_dir=Path(values["models_dir"]),
-                                      loras_dir=Path(values["loras_dir"]), server_bin=values["server_bin"])
+                                      loras_dir=Path(values["loras_dir"]), server_bin=values["server_bin"],
+                                      runtimes=validate_runtimes(values["runtimes"]))
         inspector = BinaryInspector(updated.server_bin)
         catalog = FlagCatalog(inspector)
         state.settings = updated
         state.instances.settings = updated
+        state.runtime_services.clear()
         state.inspector = inspector
         state.catalog = catalog
         state.presets = PresetStore(updated.presets_file, resolve=catalog.resolve)

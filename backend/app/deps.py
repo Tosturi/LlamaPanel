@@ -27,16 +27,36 @@ def get_manager(conn: HTTPConnection, instance_id: str = "default") -> ProcessMa
     return conn.app.state.instances.get(instance_id)[1]
 
 
-def get_presets(conn: HTTPConnection) -> PresetStore:
-    return conn.app.state.presets
+def get_presets(conn: HTTPConnection, instance_id: str = "default") -> PresetStore:
+    catalog = get_catalog(conn, instance_id)
+    if catalog is conn.app.state.catalog:
+        return conn.app.state.presets
+    store = PresetStore(conn.app.state.settings.presets_file, resolve=catalog.resolve)
+    # All runtimes share the same document lock and atomic storage.
+    store._store = conn.app.state.presets._store
+    return store
 
 
-def get_inspector(conn: HTTPConnection) -> BinaryInspector:
-    return conn.app.state.inspector
+def runtime_services(conn: HTTPConnection, instance_id: str = "default"):
+    state = conn.app.state
+    record, _ = state.instances.get(instance_id)
+    binary = state.instances.runtime_binary(record.runtime_id)
+    if record.runtime_id == "default":
+        return state.inspector, state.catalog
+    cached = state.runtime_services.get(record.runtime_id)
+    if cached is None or cached[0].server_bin != binary:
+        inspector = BinaryInspector(binary)
+        cached = (inspector, FlagCatalog(inspector))
+        state.runtime_services[record.runtime_id] = cached
+    return cached
 
 
-def get_catalog(conn: HTTPConnection) -> FlagCatalog:
-    return conn.app.state.catalog
+def get_inspector(conn: HTTPConnection, instance_id: str = "default") -> BinaryInspector:
+    return runtime_services(conn, instance_id)[0]
+
+
+def get_catalog(conn: HTTPConnection, instance_id: str = "default") -> FlagCatalog:
+    return runtime_services(conn, instance_id)[1]
 
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]

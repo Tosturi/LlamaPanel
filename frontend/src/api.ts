@@ -1,4 +1,5 @@
 import type {
+  RuntimeView,
   DownloadPlan,
   DownloadStatus,
   BinaryInfo,
@@ -119,14 +120,19 @@ export const api = {
 
 export const instancesApi = {
   list: () => fetch("/api/instances").then((r) => json<InstanceView[]>(r)),
-  create: (config: InstanceConfig) =>
+  create: (config: Omit<InstanceConfig, "runtime_id"> & Partial<Pick<InstanceConfig, "runtime_id">>) =>
     post<InstanceView>("/api/instances", config),
-  update: (id: string, config: InstanceConfig) =>
+  update: (id: string, config: Omit<InstanceConfig, "runtime_id"> & Partial<Pick<InstanceConfig, "runtime_id">>) =>
     fetch(`/api/instances/${encodeURIComponent(id)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
     }).then((r) => json<InstanceView>(r)),
+  runtime: (id: string) => fetch(`/api/instances/${encodeURIComponent(id)}/runtime`).then(r => json<RuntimeView>(r)),
+  selectRuntime: (id: string, runtime_id: string) =>
+    fetch(`/api/instances/${encodeURIComponent(id)}/runtime`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runtime_id }),
+    }).then(r => json<RuntimeView>(r)),
   remove: (id: string) =>
     fetch(`/api/instances/${encodeURIComponent(id)}`, {
       method: "DELETE",
@@ -138,9 +144,14 @@ export function instanceApi(id: string) {
   return {
     ...api,
     getFlagSchema: () =>
-      api
-        .getFlagSchema()
-        .then((flags) => flags.filter((f) => f.key !== "port")),
+      fetch(`/api/server/flags${scope}`).then(r => json<FlagDef[]>(r)).then(flags => flags.filter(f => f.key !== "port")),
+    getBinaryInfo: () => fetch(`/api/server/binary${scope}`).then(r => json<BinaryInfo>(r)),
+    listPresets: () => fetch(`/api/presets${scope}`).then(r => json<Preset[]>(r)),
+    savePreset: (name: string, modelId: string, flags: FlagValues) =>
+      fetch(`/api/presets/${encodeURIComponent(name)}${scope}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, model_id: modelId, flags, unsupported: [] }),
+      }).then(r => json<Preset>(r)),
     getStatus: () =>
       fetch(`/api/server/status${scope}`).then((r) => json<StatusResponse>(r)),
     startServer: (model_id: string, flags: FlagValues) =>

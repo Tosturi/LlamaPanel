@@ -1,10 +1,11 @@
 import asyncio
+import dataclasses
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 
 from app import discovery
-from app.deps import CatalogDep, InspectorDep, ManagerDep, SettingsDep
+from app.deps import CatalogDep, InspectorDep, ManagerDep, SettingsDep, runtime_services
 from app.gguf_scanner import scan
 from app.schemas import BinaryInfo, FlagDef, ModelInfo, RestartResponse, StartRequest, StatusResponse
 from app.settings import Settings
@@ -66,7 +67,7 @@ async def get_status(request: Request, manager: ManagerDep, settings: SettingsDe
     # loop so other requests (start, logs websocket) don't stall behind it.
     if request.query_params.get("instance_id", "default") == "default" and manager.state == "stopped":
         schema = await asyncio.to_thread(catalog.schema)
-        found = await asyncio.to_thread(discovery.find_running_llama_server, settings.server_bin, schema)
+        found = await asyncio.to_thread(discovery.find_running_llama_server, request.app.state.instances.runtime_binary(request.app.state.instances.records["default"].runtime_id), schema)
         registry = request.app.state.instances
         async with registry.lock:
             # A process owned by another instance must never be adopted twice.
@@ -89,8 +90,8 @@ async def _launch(req, request, manager, settings, catalog, restart=False):
     id = request.query_params.get('instance_id', 'default')
     async with registry.lock:
         record, manager = registry.get(id)
-        settings = request.app.state.settings
-        catalog = request.app.state.catalog
+        settings = dataclasses.replace(request.app.state.settings, server_bin=registry.runtime_binary(record.runtime_id))
+        _, catalog = runtime_services(request, id)
         model = await asyncio.to_thread(_find_model, settings, req.model_id)
         if restart and manager.state not in ('running', 'starting'):
             raise HTTPException(409, 'Server is not running; use Start instead')

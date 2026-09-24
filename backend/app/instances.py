@@ -17,6 +17,7 @@ from app.storage import JsonDocumentStore
 class InstanceConfig(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     port: int = Field(default=8080, ge=1, le=65535)
+    runtime_id: str = "default"
     model_id: str | None = None
     flags: FlagValues = Field(default_factory=dict)
 
@@ -36,6 +37,7 @@ class InstanceView(ResponseModel):
     port: int
     model_id: str | None
     flags: FlagValues
+    runtime_id: str
     status: StatusResponse
 
 
@@ -67,8 +69,8 @@ class InstanceRegistry:
                 if (proc.create_time() == record.created_at and
                         (Path(proc.exe()).resolve() == Path(record.running_executable).resolve()
                          if record.running_executable else
-                         (_binary_key(proc.name()) == _binary_key(self.settings.server_bin) or
-                          Path(proc.exe()).resolve() == Path(self.settings.server_bin).resolve()))):
+                         (_binary_key(proc.name()) == _binary_key(self.runtime_binary(record.runtime_id)) or
+                          Path(proc.exe()).resolve() == Path(self.runtime_binary(record.runtime_id)).resolve()))):
                     manager.adopt(record.pid, record.running_model_id, record.running_flags)
             except (psutil.Error, OSError):
                 pass
@@ -100,7 +102,16 @@ class InstanceRegistry:
             key != exclude and m.state in ('running', 'starting', 'stopping') and m._endpoint()[1] == port
             for key, m in self.managers.items())
 
+    def runtime_binary(self, runtime_id):
+        if runtime_id == "default":
+            return self.settings.server_bin
+        for runtime in self.settings.runtimes:
+            if runtime.id == runtime_id:
+                return runtime.server_bin
+        raise HTTPException(422, "Runtime not found; choose one in Overview")
+
     def validate_config(self, config, id=None):
+        self.runtime_binary(config.runtime_id)
         if not config.name.strip():
             raise HTTPException(422, 'Instance name must not be blank')
         if self.port_assigned(config.port, id):
@@ -118,6 +129,8 @@ class InstanceRegistry:
 
     def update(self, id, config):
         record, manager = self.get(id)
+        if "runtime_id" not in config.model_fields_set:
+            config.runtime_id = record.runtime_id
         self.validate_config(config, id)
         if record.port != config.port and (manager.state in ('running', 'starting', 'stopping') or manager.restart_pending):
             raise HTTPException(409, 'Stop this instance before changing its port')
@@ -139,7 +152,7 @@ class InstanceRegistry:
 
     async def view(self, id):
         record, manager = self.get(id)
-        return InstanceView(**{k: getattr(record, k) for k in ('id', 'name', 'port', 'model_id', 'flags')},
+        return InstanceView(**{k: getattr(record, k) for k in ('id', 'name', 'port', 'model_id', 'flags', 'runtime_id')},
                             status=await manager.status())
 
     async def ensure_port(self, id, flags, restarting=False):
