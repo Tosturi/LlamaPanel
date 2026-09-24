@@ -67,7 +67,7 @@ async def test_projector_download_without_duplicate_models(tmp_path, monkeypatch
     assert len(calls) == (1 if append else 2)
     assert service.state['downloaded'] == service.state['total'] == len(GGUF) * len(calls)
     assert len(scan(tmp_path)) == 1
-    assert len(list((tmp_path / downloads.STORE).glob('*/projector-*/*.gguf'))) == 1
+    assert len(list(tmp_path.glob('org/repo/*/projector-*/*.gguf'))) == 1
     with pytest.raises(ValueError, match='available projector'):
         service.start(plan['id'], 0, tmp_path, projector=10)
 
@@ -88,7 +88,7 @@ async def test_projector_failure_preserves_existing_model(tmp_path, monkeypatch)
     await service.task
     assert service.state['phase'] == 'failed'
     assert scan(tmp_path) == [before]
-    assert not list((tmp_path / downloads.STORE).glob('*/projector-*'))
+    assert not list(tmp_path.glob('org/repo/*/projector-*'))
 
 
 @pytest.mark.parametrize('path', ['../escape.gguf', '/escape.gguf', 'folder\\file.gguf', 'CON.gguf', 'file:stream.gguf', 'folder./x.gguf'])
@@ -123,7 +123,8 @@ async def test_download_publish_integrity_and_scanner(tmp_path, monkeypatch, pay
     assert len(models) == (1 if phase == 'complete' else 0)
     assert not list((tmp_path / downloads.STORE).glob('.partial-*'))
     if models:
-        assert models[0].id.startswith('hf/')
+        assert models[0].id.startswith('hf/org/repo/Q8_0/')
+        assert (tmp_path / 'org/repo/Q8_0/model-Q8_0.gguf').is_file()
         assert models[0].display_name == 'model-Q8_0'
         service.start(plan['id'], 0, tmp_path)
         await service.task
@@ -197,3 +198,78 @@ def test_routes_and_update_interlock(client, monkeypatch):
     assert client.post('/api/model-downloads', json={'plan_id': 'stale', 'choice': 0}).status_code == 409
     client.app.state.updates.phase = 'preparing'
     assert client.post('/api/model-downloads', json={'plan_id': 'test', 'choice': 0}).status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_readable_revisions_and_legacy_paths(tmp_path, monkeypatch):
+    mock_hf(monkeypatch, lambda request: httpx.Response(200, content=GGUF))
+    service = downloads.ModelDownloads()
+    model = downloads.candidates(metadata(['model-Q4_K_M.gguf']), None)[0]
+    plan = {'id': 'test', 'repository': 'unsloth/Qwen-GGUF',
+            'revision': 'a' * 40, 'choices': [model]}
+    service.plan = plan
+    service.start('test', 0, tmp_path)
+    await service.task
+    assert service.state['phase'] == 'complete'
+    original = tmp_path / 'unsloth/Qwen-GGUF/Q4_K_M/model-Q4_K_M.gguf'
+    assert original.read_bytes() == GGUF
+    plan['revision'] = 'b' * 40
+    service.start('test', 0, tmp_path)
+    await service.task
+    assert service.state['phase'] == 'complete'
+    assert len(scan(tmp_path)) == 2
+    assert original.read_bytes() == GGUF
+    # Old downloads retain their paths and IDs.
+    plan['revision'] = 'c' * 40
+    identity = hashlib.sha256(f"{plan['repository']}@{plan['revision']}:{model['name']}".encode()).hexdigest()[:24]
+    legacy = tmp_path / downloads.STORE / identity
+    legacy.mkdir()
+    (legacy / 'model-Q4_K_M.gguf').write_bytes(GGUF)
+    service.start('test', 0, tmp_path)
+    await service.task
+    assert service.state['phase'] == 'failed'
+    assert len(scan(tmp_path)) == 3
+    assert any(m.id.startswith(f'hf/{identity}/') for m in scan(tmp_path))
+
+
+@pytest.mark.parametrize('repo', ['CON/repo', 'org/repo.'])
+def test_readable_rejects_windows_unsafe_names(tmp_path, repo):
+    with pytest.raises(ValueError):
+        downloads.readable_target(tmp_path, {'repository': repo},
+                                  {'name': 'model-Q8_0.gguf'}, 'a' * 24)
+
+
+def test_readable_does_not_follow_author_symlink(tmp_path):
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    try:
+        (tmp_path / 'org').symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip('Directory symlinks are unavailable')
+    with pytest.raises(ValueError, match='symlink'):
+        downloads.readable_target(tmp_path, {'repository': 'org/repo'},
+                                  {'name': 'model-Q8_0.gguf'}, 'a' * 24)
+    assert list(outside.iterdir()) == []
+
+
+@pytest.mark.parametrize('name,label', [
+    ('model-Q4_K_M.gguf', 'Q4_K_M'),
+    ('Q8_0/model-Q8_0', 'Q8_0'),
+    ('model-PTQ1_0.gguf', 'PTQ1_0'),
+    ('model-BF16.gguf', 'BF16'),
+    ('model.gguf', 'model'),
+])
+def test_readable_folder_labels(tmp_path, name, label):
+    target = downloads.readable_target(tmp_path, {'repository': 'org/repo'},
+                                       {'name': name}, 'a' * 24)
+    assert target == tmp_path / 'org/repo' / label
+
+
+def test_readable_preserves_user_owned_folder(tmp_path):
+    occupied = tmp_path / 'org/repo/Q8_0'
+    occupied.mkdir(parents=True)
+    (occupied / 'model.gguf').write_bytes(GGUF)
+    target = downloads.readable_target(tmp_path, {'repository': 'org/repo'},
+                                       {'name': 'model-Q8_0.gguf'}, 'a' * 24)
+    assert target.name == 'Q8_0-' + 'a' * 24
+    assert (occupied / 'model.gguf').read_bytes() == GGUF

@@ -230,6 +230,21 @@ def scan(directory: Path) -> list[ModelInfo]:
             if re.fullmatch(r'[a-f0-9]{24}', child.name) and child.is_dir() and not child.is_symlink():
                 for model in _scan_flat(child):
                     models.append(model.model_copy(update={'id': f'hf/{child.name}/{model.id}'}))
+    # Managed readable layout: author/repository/quantization. Do not recurse
+    # into projector or partial directories, or follow directory symlinks.
+    def folders(root):
+        if not root.is_dir():
+            return []
+        return [p for p in sorted(root.iterdir())
+                if not p.name.startswith('.') and p.is_dir() and not p.is_symlink()]
+    for author in folders(directory):
+        for repo in folders(author):
+            for variant in folders(repo):
+                marker = variant / '.llamapanel-download'
+                if marker.is_file() and not marker.is_symlink():
+                    for model in _scan_flat(variant):
+                        relative = variant.relative_to(directory).as_posix()
+                        models.append(model.model_copy(update={'id': f'hf/{relative}/{model.id}'}))
     return models
 
 

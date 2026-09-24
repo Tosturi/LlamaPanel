@@ -40,10 +40,19 @@ workspace and browser tab are visible. Returning to the screen refreshes status.
 
 ## Storage and failures
 
-Completed downloads live in `<models directory>/.hf-models/<model revision id>/`.
+New downloads live in `<models directory>/<author>/<repository>/<quantization>/`,
+for example `models/unsloth/Qwen3.8-27B-GGUF/Q4_K_M/`. The quantization is taken
+from the selected filename; unrecognized formats use the model filename without
+the GGUF extension. Split model parts stay together. If that directory belongs
+to another file group, revision, or a manually placed model, a deterministic
+suffix is added instead of overwriting it. A small `.llamapanel-download` marker
+identifies managed directories; keep it alongside the model files.
+
 The library scans these managed directories as well as existing top-level GGUF
-files. Names remain based on filenames; IDs include the managed directory to
-distinguish different repositories or revisions with identical filenames.
+files. Older downloads in `.hf-models/<model revision id>/` remain supported in
+place, preserving saved paths and model IDs. Names remain based on filenames;
+IDs include the managed directory to distinguish identical filenames.
+The download progress reports the actual destination directory.
 The download directory is captured when Download is clicked; changing Settings
 afterwards does not move an active download.
 

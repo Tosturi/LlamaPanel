@@ -65,6 +65,37 @@ def candidates(data, quant, projector=False):
     return result
 
 
+def readable_target(directory, plan, model, identity):
+    # Keep legacy paths stable so saved server configurations keep working.
+    legacy = directory / STORE / identity
+    if legacy.exists() or legacy.is_symlink():
+        return legacy
+    repo = safe_path(plan['repository'])
+    parent = directory
+    for part in repo.split('/'):
+        parent = parent / part
+        if parent.is_symlink():
+            raise ValueError('The download directory cannot be a symlink.')
+        parent.mkdir(exist_ok=True)
+    name = PurePosixPath(model['name']).name
+    quant = re.search(r'(?:^|[._-])((?:I?Q|PTQ|TQ)\d[\w]*|BF16|F16|F32)(?=\.gguf$|$)', name, re.I)
+    label = quant[1].upper() if quant else re.sub(r'\.gguf$', '', name, flags=re.I)
+    safe_path(label)
+    target = parent / label
+    # Never overwrite a different file group, revision, or user-owned folder.
+    if target.exists() or target.is_symlink():
+        marker = target / '.llamapanel-download'
+        if target.is_symlink() or marker.is_symlink():
+            raise ValueError('The model directory cannot contain symlink markers.')
+        if not marker.is_file() or marker.read_text() != identity:
+            target = parent / f'{label}-{identity}'
+            marker = target / '.llamapanel-download'
+            if target.exists() and (target.is_symlink() or marker.is_symlink()
+                                    or not marker.is_file() or marker.read_text() != identity):
+                raise ValueError('The download destination is already occupied.')
+    return target
+
+
 async def stream_hf(client, url):
     """Follow only HF/CDN HTTPS redirects; never forward the token to a CDN."""
     for _ in range(8):
@@ -146,7 +177,8 @@ class ModelDownloads:
             if store.is_symlink():
                 raise ValueError('The download storage directory cannot be a symlink.')
             identity = hashlib.sha256(f"{plan['repository']}@{plan['revision']}:{model['name']}".encode()).hexdigest()[:24]
-            target = store / identity
+            target = readable_target(directory, plan, model, identity)
+            self.state['directory'] = str(target)
             projector = model.get('projector')
             projector_dir = ('projector-' + hashlib.sha256(projector['name'].encode()).hexdigest()[:16]) if projector else None
             append_projector = target.exists() and projector is not None
@@ -162,6 +194,7 @@ class ModelDownloads:
                 raise ValueError('Not enough free disk space.')
             stage = store / ('.partial-' + self.state['id'])
             stage.mkdir()
+            (stage / '.llamapanel-download').write_text(identity)
             async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=20), headers={'Accept-Encoding': 'identity'}) as client:
                 for file, subdir in files:
                     self.state['message'] = PurePosixPath(file['path']).name
