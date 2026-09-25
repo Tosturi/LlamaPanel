@@ -11,6 +11,10 @@ header h1 .version { font-size: 0.75rem; font-weight: normal; margin-left: 0.5re
 .panel h2 { margin-top: 0; font-size: 0.95rem; text-transform: uppercase; color: #9aa; }
 .panel-header { display: flex; align-items: center; justify-content: space-between; }
 .panel-header h2 { margin: 0; }
+.preset-editor-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.preset-editor-fields > label { display: grid; gap: 8px; margin-bottom: 24px; max-width: 480px; }
+.preset-editor-actions { display: flex; gap: 12px; margin-top: 24px; }
+.preset-editor .flags-notice code { overflow-wrap: anywhere; }
 .icon-button { background: transparent; border: 1px solid #2a2e38; border-radius: 4px; color: #e6e6e6; width: 1.8rem; height: 1.8rem; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .icon-button:hover:not(:disabled) { background: #1f2430; }
 .icon-button:disabled { opacity: 0.6; cursor: default; }

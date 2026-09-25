@@ -8,6 +8,7 @@ import { LogViewer } from "./components/LogViewer";
 import { ModelList } from "./components/ModelList";
 import { ModelDownload } from "./components/ModelDownload";
 import { PresetBar } from "./components/PresetBar";
+import { PresetEditor } from "./components/PresetEditor";
 import { ServerControls } from "./components/ServerControls";
 import type {
   BinaryInfo,
@@ -66,6 +67,7 @@ function ServerWorkspace({
   const [loras, setLoras] = useState<LoraInfo[]>([]);
   const [schema, setSchema] = useState<FlagDef[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(
     instance.model_id,
   );
@@ -731,7 +733,19 @@ function ServerWorkspace({
             )}
           </>
         )}
-        {page === "presets" && (
+        <div hidden={page !== "presets"}>
+        {editingPreset && (
+          <PresetEditor key={editingPreset.name} preset={editingPreset}
+            schema={schema} models={models} loras={loras}
+            onCancel={() => setEditingPreset(null)}
+            onSave={async draft => {
+              const saved = await api.editPreset(editingPreset.name, draft);
+              setPresets(prev => prev.map(p => p.name === editingPreset.name ? saved : p));
+              setEditingPreset(null);
+            }} />
+        )}
+        </div>
+        {page === "presets" && !editingPreset && (
           <>
             <div className="page-heading">
               <div>
@@ -759,6 +773,8 @@ function ServerWorkspace({
                   >
                     Load configuration →
                   </button>
+                  <button type="button" aria-label={`Edit preset ${p.name}`}
+                    onClick={() => setEditingPreset(p)}>Edit</button>
                   <button
                     type="button"
                     className="danger-button"

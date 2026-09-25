@@ -18,7 +18,7 @@ time. Two things keep old presets usable when it does:
   build_args() ignores them, so a preset saved against another build
   still starts fine and loses nothing when going back.
 
-Routers only see list/upsert/delete; a format change is a new migration
+Routers only see list/upsert/edit/delete; a format change is a new migration
 here, not a change in the API layer.
 """
 
@@ -88,6 +88,23 @@ class PresetStore:
         # every read, never written.
         stored = {k: v for k, v in preset.items() if k != "unsupported"}
         self._store.update(lambda items: [p for p in items if p.get("name") != name] + [stored])
+        return preset
+
+    def edit(self, original: str, name: str, model_id: str, flags: dict) -> dict:
+        preset = self._normalize_entry(
+            {"name": name, "model_id": model_id, "flags": flags, "updated_at": time.time()}
+        )
+        stored = {k: v for k, v in preset.items() if k != "unsupported"}
+
+        def replace(items: list) -> list:
+            if not any(p.get("name") == original for p in items):
+                raise KeyError(original)
+            if name != original and any(p.get("name") == name for p in items):
+                raise ValueError("A preset with this name already exists")
+            return [stored if p.get("name") == original else p for p in items]
+
+        # Validate and rename in one locked, atomic document update.
+        self._store.update(replace)
         return preset
 
     def delete(self, name: str) -> bool:

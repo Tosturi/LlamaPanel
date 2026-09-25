@@ -87,6 +87,17 @@ to the new location on first launch.
 
 ## Preset storage
 
+In **Presets**, choose **Edit** on a card to rename it or change its flags and
+LoRA selections. **Save changes** updates that shared preset; **Cancel** discards
+the edits. Saving does not change a server's configuration or restart it: load
+the edited preset when you want to use it. Names must be non-empty, and renaming
+to another existing preset's name is rejected. Flags outside the selected
+runtime's form are preserved unless explicitly removed or cleared.
+
+`PATCH /api/presets/{name}?instance_id=<id>` edits an existing preset using the
+selected instance's flag catalog. Send the new `name`, `model_id` and complete
+`flags` in the body. Missing originals return 404; name conflicts return 409.
+
 `presets.json` is a versioned document (`{"version": N, "app_version": ...,
 "presets": [...]}`; see `backend/app/storage.py`). Format upgrades migrate it
 automatically after saving a `presets.json.vN.bak` backup. Files from a newer

@@ -147,6 +147,11 @@ export function instanceApi(id: string) {
       fetch(`/api/server/flags${scope}`).then(r => json<FlagDef[]>(r)).then(flags => flags.filter(f => f.key !== "port")),
     getBinaryInfo: () => fetch(`/api/server/binary${scope}`).then(r => json<BinaryInfo>(r)),
     listPresets: () => fetch(`/api/presets${scope}`).then(r => json<Preset[]>(r)),
+    editPreset: (original: string, preset: Preset) =>
+      fetch(`/api/presets/${encodeURIComponent(original)}${scope}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(preset),
+      }).then(r => json<Preset>(r)),
     savePreset: (name: string, modelId: string, flags: FlagValues) =>
       fetch(`/api/presets/${encodeURIComponent(name)}${scope}`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
