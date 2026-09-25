@@ -195,7 +195,8 @@ export interface paths {
         delete: operations["delete_preset_api_presets__name__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Edit Preset */
+        patch: operations["edit_preset_api_presets__name__patch"];
         trace?: never;
     };
     "/api/server/binary": {
@@ -1397,6 +1398,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_preset_api_presets__name__patch: {
+        parameters: {
+            query?: {
+                instance_id?: string;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Preset"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Preset"];
                 };
             };
             /** @description Validation Error */

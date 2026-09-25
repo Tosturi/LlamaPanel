@@ -31,6 +31,21 @@ def save_preset(name: str, preset: Preset, store: PresetsDep) -> dict:
         raise _newer_format(exc)
 
 
+@router.patch("/{name}", response_model=Preset)
+def edit_preset(name: str, preset: Preset, store: PresetsDep) -> dict:
+    new_name = preset.name.strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Preset name cannot be empty")
+    try:
+        return store.edit(name, new_name, preset.model_id, preset.flags)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Preset '{name}' not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except NewerFormatError as exc:
+        raise _newer_format(exc)
+
+
 @router.delete("/{name}", response_model=DeletedResponse)
 def delete_preset(name: str, store: PresetsDep) -> DeletedResponse:
     try:
