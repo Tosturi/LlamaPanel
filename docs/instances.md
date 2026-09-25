@@ -33,6 +33,20 @@ any tab. Reopening an instance keeps its unsaved edits.
 Each instance has its own process, readiness checks, restart queue and log stream.
 Stopping one instance does not stop the others.
 
+## Runtime selection
+
+Configure the default executable and named alternatives in
+**Settings → llama-server runtimes**, then choose a build for each instance in
+**Server → Overview → Runtime**. Existing and new instances use the default
+runtime until changed.
+
+Selecting a runtime saves the choice immediately and re-reads `--version` and
+`--help` to update the flag form and preset compatibility. It does not restart
+the running server; the selected build is used on the next start or restart.
+Already queued restarts keep their captured executable and arguments. See
+[multiple llama-server builds](configuration.md#multiple-llama-server-builds)
+for details.
+
 ## Ports and deletion
 
 A saved instance reserves its port even while stopped. Startup is rejected if
@@ -66,8 +80,19 @@ enough RAM/VRAM; the panel does not manage GPU memory allocation.
 | `POST /api/instances` | Create an instance |
 | `PUT /api/instances/{id}` | Save a configuration |
 | `DELETE /api/instances/{id}` | Delete a stopped instance |
+| `GET /api/instances/{id}/runtime` | Read the selected runtime ID, binary information and flag schema |
+| `PUT /api/instances/{id}/runtime` | Select and save a runtime, re-probe its binary and return the refreshed schema |
 
 The `/api/server/status`, `/api/server/start`, `/api/server/stop`,
 `/api/server/restart`, `/api/server/restart/cancel` routes and the
 `/api/server/logs` WebSocket accept `?instance_id=<id>`. Omitting it selects
-`default`. `/api/server/flags` and `/api/server/binary` remain shared.
+the `default` instance.
+
+`GET /api/server/flags` and `GET /api/server/binary` also accept
+`?instance_id=<id>` and resolve against that instance's selected runtime.
+Omitting it selects the `default` instance, which may itself use a named runtime.
+`GET /api/server/binary?instance_id=<id>&refresh=true` forces a fresh binary probe.
+
+`PUT /api/instances/{id}/runtime` accepts `{"runtime_id": "<runtime-id>"}`.
+Both runtime endpoints return `runtime_id`, `binary` and `flags`. Selecting a
+runtime changes future launches without stopping the current process.
