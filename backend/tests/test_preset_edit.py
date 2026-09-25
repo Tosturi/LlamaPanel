@@ -27,3 +27,12 @@ def test_edit_rejects_collision_missing_and_blank_without_mutation(client):
         result = client.patch('/api/presets/' + original, json={"name": new, "model_id": "m", "flags": {}})
         assert result.status_code == status
         assert client.get('/api/presets').json() == before
+
+
+def test_edit_changes_model_and_preserves_flags(client):
+    client.put('/api/presets/model-test', json={"name": "model-test", "model_id": "old-model", "flags": {"ctx_size": 4096}})
+    response = client.patch('/api/presets/model-test', json={"name": "model-test", "model_id": "new-model", "flags": {"ctx_size": 4096}})
+    assert response.status_code == 200
+    saved = client.get('/api/presets').json()[0]
+    assert saved['model_id'] == 'new-model'
+    assert saved['flags'] == {"ctx_size": 4096}
