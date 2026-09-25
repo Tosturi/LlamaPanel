@@ -30,8 +30,13 @@ does not proxy inference requests.
 | `frontend/src/App.tsx` | Instance overview and workspaces with configuration, status and logs |
 
 Objects are created during `lifespan` and exposed through `app.state`.
-`ManagerDep` selects a manager by `instance_id`, falling back to `default`
-when omitted. Model and preset libraries, the flag schema and binary are shared.
+`ManagerDep` selects a manager by `instance_id`, falling back to the `default`
+instance when omitted. Model, LoRA and preset libraries are shared. Each instance
+stores a `runtime_id` that selects the default executable or a named alternative
+from Settings. `InspectorDep` and `CatalogDep` resolve the binary inspector and
+flag catalog through that instance's runtime; these services are cached per
+runtime, not globally shared across different builds. Preset compatibility is
+resolved against the selected runtime's catalog while preset storage stays shared.
 
 ## Instance lifecycle
 
@@ -51,10 +56,17 @@ started automatically.
 
 ## Flags and presets
 
-The form schema comes from the installed binary's `--help`. `CURATED` supplies
+The form schema comes from the selected runtime's `--help`. `CURATED` supplies
 labels, core groups and stable keys; `HIDDEN` excludes panel-managed parameters.
 If the binary is unavailable, the panel uses
 `backend/app/snapshots/llama-server-help.txt`.
+
+Selecting a runtime in Overview persists the instance's choice and re-runs
+`--version` and `--help`, refreshing its flag form and preset compatibility.
+The selection affects future starts and restarts, not the running process.
+An already queued restart keeps its captured executable and arguments. See
+[multiple llama-server builds](configuration.md#multiple-llama-server-builds)
+for configuration and storage details.
 
 The form stores only explicit overrides. `build_args` passes them even when
 they match documented defaults. Empty values are omitted; boolean pairs use
