@@ -296,3 +296,8 @@ dialog.path-browser::backdrop { background: #0009; }
 .environment > div { min-width: 0; }
 .environment > code { max-width: 55%; overflow-wrap: anywhere; }
 @media (max-width: 700px) { .environment > code { max-width: 100%; } }
+
+.runtime-details { margin-left: auto; max-width: 60%; text-align: right; }
+.runtime-details .binary-info { margin: 0; }
+.preset-name-hint { flex-basis: 100%; margin: 0; }
+@media (max-width: 700px) { .runtime-details { margin-left: 0; max-width: 100%; text-align: left; } }

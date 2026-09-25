@@ -8,6 +8,7 @@ import { LogViewer } from "./components/LogViewer";
 import { ModelList } from "./components/ModelList";
 import { ModelDownload } from "./components/ModelDownload";
 import { PresetBar } from "./components/PresetBar";
+import { samePresetFlags } from "./presetState";
 import { PresetEditor } from "./components/PresetEditor";
 import { ServerControls } from "./components/ServerControls";
 import type {
@@ -67,6 +68,9 @@ function ServerWorkspace({
   const [loras, setLoras] = useState<LoraInfo[]>([]);
   const [schema, setSchema] = useState<FlagDef[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [loadedPreset, setLoadedPreset] = useState<Preset | null>(null);
+  const [presetName, setPresetName] = useState("");
+  const [presetPending, setPresetPending] = useState(false);
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(
     instance.model_id,
@@ -263,28 +267,27 @@ function ServerWorkspace({
       .catch((e) => setError(String(e)));
   };
 
-  const handleSavePreset = (name: string) => {
-    if (!selectedId) return;
-    if (
-      presets.some((preset) => preset.name === name) &&
-      !window.confirm(
-        `Replace preset “${name}” with the current configuration?`,
-      )
-    )
-      return;
+  const handleSavePreset = async (name: string, update = false) => {
+    if (!selectedId || presetPending || !name.trim() || (update && !loadedPreset)) return;
     setError(null);
-    api
-      .savePreset(name, selectedId, values)
-      .then((saved) =>
-        setPresets((prev) => [
-          ...prev.filter((p) => p.name !== saved.name),
-          saved,
-        ]),
-      )
-      .catch((e) => setError(String(e)));
+    setPresetPending(true);
+    try {
+      if (!update && (await api.listPresets()).some(p => p.name === name.trim())) {
+        throw new Error("Choose a different name to save a new preset.");
+      }
+      const saved = update
+        ? await api.editPreset(loadedPreset!.name, { ...loadedPreset!, name: name.trim(), model_id: selectedId, flags: values })
+        : await api.savePreset(name.trim(), selectedId, values);
+      setPresets(prev => [...prev.filter(p => p.name !== saved.name && (!update || p.name !== loadedPreset!.name)), saved]);
+      setLoadedPreset(saved);
+      setPresetName(saved.name);
+    } catch (e) { setError(String(e)); }
+    finally { setPresetPending(false); }
   };
 
   const handleLoadPreset = (preset: Preset) => {
+    setLoadedPreset(preset);
+    setPresetName(preset.name);
     setSelectedId(preset.model_id);
     setValues(
       Object.fromEntries(
@@ -327,7 +330,10 @@ function ServerWorkspace({
     setError(null);
     api
       .deletePreset(name)
-      .then(() => setPresets((prev) => prev.filter((p) => p.name !== name)))
+      .then(() => {
+        setPresets(prev => prev.filter(p => p.name !== name));
+        if (loadedPreset?.name === name) { setLoadedPreset(null); setPresetName(""); }
+      })
       .catch((e) => setError(String(e)));
   };
 
@@ -362,6 +368,15 @@ function ServerWorkspace({
   const presetBar = (
     <PresetBar
       presets={presets}
+      name={presetName}
+      onNameChange={setPresetName}
+      loadedName={loadedPreset?.name ?? null}
+      pending={presetPending}
+      canUpdate={!!loadedPreset && selectedId !== null && (
+        presetName.trim() !== loadedPreset.name || selectedId !== loadedPreset.model_id ||
+        !samePresetFlags(values, loadedPreset.flags)
+      )}
+      onUpdate={() => handleSavePreset(presetName, true)}
       canSave={selectedId !== null}
       onLoad={(p) => {
         handleLoadPreset(p);
@@ -574,17 +589,11 @@ function ServerWorkspace({
                       <option value="default">Default llama-server</option>
                       {runtimes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
-                    {live && <p className="muted">Used on the next start or restart.</p>}
-                    {runtimePending && <p className="muted" role="status">Reading runtime flags…</p>}
-                    {binaryNotice ?? (
-                      <p className="muted">Runtime information unavailable.</p>
-                    )}
                   </div>
-                  <code className="file-path">
-                    {binary?.resolved_path ??
-                      binary?.server_bin ??
-                      "Binary path unavailable"}
-                  </code>
+                  <div className="runtime-details">
+                    {runtimePending ? <p className="muted" role="status">Reading runtime flags…</p> :
+                      binaryNotice ?? <p className="muted">Runtime information unavailable.</p>}
+                  </div>
                 </section>
               </div>
             )}
@@ -741,6 +750,10 @@ function ServerWorkspace({
             onSave={async draft => {
               const saved = await api.editPreset(editingPreset.name, draft);
               setPresets(prev => prev.map(p => p.name === editingPreset.name ? saved : p));
+              if (loadedPreset?.name === editingPreset.name) {
+                setLoadedPreset(saved);
+                setPresetName(name => name === editingPreset.name ? saved.name : name);
+              }
               setEditingPreset(null);
             }} />
         )}

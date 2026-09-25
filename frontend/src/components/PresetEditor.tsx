@@ -11,10 +11,11 @@ export function PresetEditor({ preset, schema, models, loras, onSave, onCancel }
   onCancel: () => void;
 }) {
   const [name, setName] = useState(preset.name);
+  const [modelId, setModelId] = useState(preset.model_id);
   const [values, setValues] = useState<FlagValues>({ ...preset.flags });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const model = models.find(m => m.id === preset.model_id);
+  const model = models.find(m => m.id === modelId);
   const unknown = Object.keys(values).filter(key => !schema.some(f => f.key === key));
   const change = (key: string, value: FlagValues[string]) => setValues(prev => {
     const next = { ...prev };
@@ -25,17 +26,23 @@ export function PresetEditor({ preset, schema, models, loras, onSave, onCancel }
   const save = async () => {
     if (pending || !name.trim()) return;
     setPending(true); setError("");
-    try { await onSave({ ...preset, name: name.trim(), flags: values }); }
+    try { await onSave({ ...preset, name: name.trim(), model_id: modelId, flags: values }); }
     catch (e) { setError(String(e)); }
     finally { setPending(false); }
   };
   return <section className="panel preset-editor" aria-label="Edit preset">
     <div className="panel-header"><h2>Edit preset</h2></div>
-    <p className="muted">Model: {model?.display_name ?? preset.model_id}. Saving updates this shared preset. Load it into a server to use the changes.</p>
+    <p className="muted">Saving updates this shared preset. Load it into a server to use the changes.</p>
     {error && <p className="error-banner" role="alert">{error}</p>}
     <fieldset disabled={pending} className="preset-editor-fields">
       <label>Preset name
         <input autoFocus value={name} onChange={e => setName(e.target.value)} />
+      </label>
+      <label>Model
+        <select value={modelId} onChange={e => setModelId(e.target.value)}>
+          {!models.some(m => m.id === modelId) && <option value={modelId}>{modelId} (not in library)</option>}
+          {models.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+        </select>
       </label>
       {unknown.length > 0 && <div className="flags-notice warn">
         <p>Flags outside this runtime's form are preserved unless removed:</p>

@@ -87,12 +87,19 @@ to the new location on first launch.
 
 ## Preset storage
 
-In **Presets**, choose **Edit** on a card to rename it or change its flags and
+In **Presets**, choose **Edit** on a card to rename it, select a different model, or change its flags and
 LoRA selections. **Save changes** updates that shared preset; **Cancel** discards
 the edits. Saving does not change a server's configuration or restart it: load
 the edited preset when you want to use it. Names must be non-empty, and renaming
 to another existing preset's name is rejected. Flags outside the selected
 runtime's form are preserved unless explicitly removed or cleared.
+
+Loading a preset into **Server → Configuration** also fills its name. **Save
+changes** updates the loaded preset (including its name and model), and is enabled
+only when the configuration differs from the loaded version. Reverting edits
+or saving disables it again. **Save as a new preset** creates a separate entry
+and requires a name not already in use. Saving either way leaves running servers
+unchanged.
 
 `PATCH /api/presets/{name}?instance_id=<id>` edits an existing preset using the
 selected instance's flag catalog. Send the new `name`, `model_id` and complete
