@@ -121,6 +121,7 @@ def validate_paths(update):
 async def save_settings(update: SettingsUpdate, request: Request):
     state = request.app.state
     async with state.instances.lock:
+        state.instances.ensure_not_evaluating()
         current = state.settings
         for key in current.locked_fields:
             if getattr(update, key) != str(getattr(current, key)):

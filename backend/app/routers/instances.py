@@ -24,6 +24,7 @@ async def list_instances(request: Request):
 async def create_instance(config: InstanceConfig, request: Request):
     registry = request.app.state.instances
     async with registry.lock:
+        registry.ensure_not_evaluating()
         record = registry.create(config)
         return await registry.view(record.id)
 
@@ -32,6 +33,7 @@ async def create_instance(config: InstanceConfig, request: Request):
 async def update_instance(id: str, config: InstanceConfig, request: Request):
     registry = request.app.state.instances
     async with registry.lock:
+        registry.ensure_not_evaluating()
         registry.update(id, config)
         return await registry.view(id)
 
@@ -40,6 +42,7 @@ async def update_instance(id: str, config: InstanceConfig, request: Request):
 async def delete_instance(id: str, request: Request):
     registry = request.app.state.instances
     async with registry.lock:
+        registry.ensure_not_evaluating()
         await registry.delete(id)
         return DeletedResponse(deleted=id)
 
@@ -70,6 +73,7 @@ async def select_runtime(id: str, selection: RuntimeSelection, request: Request)
     state = request.app.state
     registry = state.instances
     async with registry.lock:
+        registry.ensure_not_evaluating()
         record, _ = registry.get(id)
         executable = registry.runtime_binary(selection.runtime_id)
         inspector = BinaryInspector(executable)

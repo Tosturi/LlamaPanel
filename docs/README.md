@@ -11,3 +11,5 @@
 
 Keep HLD documents in this directory. `HLD.md` describes the current architecture;
 add further architecture documents alongside it and link them here.
+
+- [Model evaluations](evaluations.md): benchmark storage, comparison runs, resource controls and custom suites.

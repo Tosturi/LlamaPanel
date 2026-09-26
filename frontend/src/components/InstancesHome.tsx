@@ -7,12 +7,14 @@ export function InstancesHome({
   onOpen,
   onRefresh,
   onSettings,
+  onEvaluations,
   needsSetup,
 }: {
   instances: InstanceView[];
   onOpen: (id: string, view?: "configuration" | "logs") => void;
   onRefresh: () => Promise<void>;
   onSettings: () => void;
+  onEvaluations: () => void;
   needsSetup: boolean;
 }) {
   const [name, setName] = useState("");
@@ -67,7 +69,7 @@ export function InstancesHome({
         <div className="brand">
           <span className="brand-mark">L/</span>LlamaPanel
         </div>
-        <span className="muted">Local workspace</span>
+        <button onClick={onEvaluations}>Evaluations</button>
         <button className="settings-button" onClick={onSettings}>⚙ Settings</button>
       </header>
       <main>

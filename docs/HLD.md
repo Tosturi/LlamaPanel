@@ -102,3 +102,13 @@ Use one panel process per data directory. Ports are reserved across saved
 instances, including stopped ones. A pre-launch port check cannot prevent an
 external process from claiming the port immediately afterwards. The panel
 does not allocate GPU memory: available resources limit concurrent models.
+
+## Evaluation workspace
+
+`app.evals` manages a shared, content-addressed benchmark library and sequential
+comparisons on an independently owned evaluation instance. Runtime mutations are
+leased under the instance registry lock. Bounded HTTP requests generate answers;
+local judging happens after participants unload. Immutable input/configuration
+snapshots and incremental sample records preserve comparisons without retaining
+all conversations in memory. See [evaluations](evaluations.md) for supported
+recipes, resource recovery, storage and limitations.

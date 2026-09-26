@@ -64,6 +64,9 @@ After updating the source, run `npm ci` and `npm run build` in `frontend` again,
 then restart the panel. Settings, presets, instance configurations and logs are stored separately from the
 installation directory; see [configuration and storage](docs/configuration.md).
 
+Compare saved model/LoRA configurations in **Evaluations**. See the
+[evaluation guide](docs/evaluations.md) for dataset downloads, custom suites and resource controls.
+
 ## License
 
 [MIT](LICENSE).
