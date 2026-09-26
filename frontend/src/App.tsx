@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { api as globalApi, instanceApi, instancesApi } from "./api";
+import { EvaluationsPage } from "./components/EvaluationsPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { InstancesHome } from "./components/InstancesHome";
 import type { InstanceView } from "./types";
@@ -39,6 +40,7 @@ function ServerWorkspace({
   onBack,
   navigation,
   onSettings,
+  onEvaluations,
   settingsRevision,
   active,
 }: {
@@ -46,6 +48,7 @@ function ServerWorkspace({
   onBack: () => void;
   navigation: { id: string; view: "configuration" | "logs" } | null;
   onSettings: () => void;
+  onEvaluations: () => void;
   settingsRevision: number;
   active: boolean;
 }) {
@@ -424,6 +427,7 @@ function ServerWorkspace({
         </nav>
         <div className="header-actions">
           <span className="muted workspace-label">Local workspace</span>
+          <button className="settings-button" onClick={onEvaluations}>Evaluations</button>
           <button className="settings-button" onClick={onSettings}>⚙ Settings</button>
         </div>
       </header>
@@ -812,6 +816,7 @@ function ServerWorkspace({
 }
 
 export default function App() {
+  const [showEvaluations, setShowEvaluations] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsRevision, setSettingsRevision] = useState(0);
   const [needsSetup, setNeedsSetup] = useState(false);
@@ -859,7 +864,8 @@ export default function App() {
         setNeedsSetup(s.needs_setup);
         setSettingsRevision(v => v + 1);
       }} />}
-      <div hidden={showSettings}>
+      <div hidden={!showEvaluations || showSettings}><EvaluationsPage active={showEvaluations && !showSettings} onBack={() => setShowEvaluations(false)} onSettings={() => setShowSettings(true)} /></div>
+      <div hidden={showSettings || showEvaluations}>
       {error && (
         <div role="alert" className="error-banner">
           {error}
@@ -871,6 +877,7 @@ export default function App() {
           onOpen={open}
           onRefresh={refresh}
           onSettings={() => setShowSettings(true)}
+          onEvaluations={() => setShowEvaluations(true)}
           needsSetup={needsSetup}
         />
       )}
@@ -879,10 +886,11 @@ export default function App() {
         .map((item) => (
           <div key={item.id} hidden={selected !== item.id}>
             <ServerWorkspace
-              active={!showSettings && selected === item.id}
+              active={!showSettings && !showEvaluations && selected === item.id}
               instance={item}
               navigation={navigation}
               onSettings={() => setShowSettings(true)}
+              onEvaluations={() => setShowEvaluations(true)}
               settingsRevision={settingsRevision}
               onBack={() => {
                 setSelected(null);

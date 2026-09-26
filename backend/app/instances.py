@@ -46,6 +46,7 @@ class InstanceRegistry:
         self.settings = settings
         self.client = client
         self.lock = asyncio.Lock()
+        self.eval_active = False
         self.store = JsonDocumentStore(settings.data_dir / 'instances.json', key='instances',
                                        version=1, migrations={0: lambda value: value}, empty=list)
         self.records = {r.id: r for r in (InstanceRecord.model_validate(v) for v in self.store.load())}
@@ -75,6 +76,10 @@ class InstanceRegistry:
             except (psutil.Error, OSError):
                 pass
         return manager
+
+    def ensure_not_evaluating(self):
+        if self.eval_active:
+            raise HTTPException(409, "An evaluation owns the runtime; cancel it or wait for completion")
 
     def get(self, id):
         if id not in self.records:

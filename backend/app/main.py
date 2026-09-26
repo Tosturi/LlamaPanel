@@ -11,7 +11,8 @@ from app.flags import FlagCatalog
 from app.introspection import BinaryInspector
 from app.llama_client import LlamaClient
 from app.presets import PresetStore
-from app.routers import models, presets, server, instances
+from app.routers import models, presets, server, instances, evaluations
+from app.evals.runner import EvaluationService
 from app.routers import settings as settings_router
 from app.routers import updates as updates_router
 from app.updates import UpdateService
@@ -52,9 +53,11 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         app.state.presets.adopt_legacy_file(settings.legacy_presets_files)
         app.state.instances = InstanceRegistry(settings, client)
         app.state.manager = app.state.instances.managers["default"]
+        app.state.evaluations = EvaluationService(app)
         try:
             yield
         finally:
+            await app.state.evaluations.close()
             await app.state.model_downloads.cancel()
             await app.state.updates.close()
             await app.state.instances.shutdown()
@@ -62,6 +65,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
     app = FastAPI(title="LlamaPanel", version=__version__, lifespan=lifespan)
 
+    app.include_router(evaluations.router)
     app.include_router(models.router)
     app.include_router(server.router)
     app.include_router(instances.router)

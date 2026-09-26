@@ -65,13 +65,13 @@ async def get_status(request: Request, manager: ManagerDep, settings: SettingsDe
     # The process scan and the model-directory scan are blocking I/O, and
     # the UI polls this endpoint every few seconds - run them off the event
     # loop so other requests (start, logs websocket) don't stall behind it.
-    if request.query_params.get("instance_id", "default") == "default" and manager.state == "stopped":
+    if request.query_params.get("instance_id", "default") == "default" and manager.state == "stopped" and not request.app.state.instances.eval_active:
         schema = await asyncio.to_thread(catalog.schema)
         found = await asyncio.to_thread(discovery.find_running_llama_server, request.app.state.instances.runtime_binary(request.app.state.instances.records["default"].runtime_id), schema)
         registry = request.app.state.instances
         async with registry.lock:
             # A process owned by another instance must never be adopted twice.
-            if found and manager.state == "stopped" and not any(
+            if found and manager.state == "stopped" and not registry.eval_active and not any(
                 m is not manager and m._pid == found["pid"] for m in registry.managers.values()
             ):
                 port = int(found["flags"].get("port") or 8080)
@@ -89,6 +89,7 @@ async def _launch(req, request, manager, settings, catalog, restart=False):
     registry = request.app.state.instances
     id = request.query_params.get('instance_id', 'default')
     async with registry.lock:
+        registry.ensure_not_evaluating()
         record, manager = registry.get(id)
         settings = dataclasses.replace(request.app.state.settings, server_bin=registry.runtime_binary(record.runtime_id))
         _, catalog = runtime_services(request, id)
@@ -130,6 +131,7 @@ async def start_server(req: StartRequest, request: Request, manager: ManagerDep,
 async def stop_server(request: Request, manager: ManagerDep):
     registry = request.app.state.instances
     async with registry.lock:
+        registry.ensure_not_evaluating()
         await manager.cancel_restart()
         await manager.stop()
         registry.checkpoint(request.query_params.get('instance_id', 'default'))

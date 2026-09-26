@@ -68,7 +68,9 @@ async def install(body: InstallRequest, request: Request):
     if request.app.state.model_downloads.busy:
         raise HTTPException(409, 'Finish or cancel the model download before updating')
     try:
-        request.app.state.updates.start(body.version)
+        async with request.app.state.instances.lock:
+            request.app.state.instances.ensure_not_evaluating()
+            request.app.state.updates.start(body.version)
     except (ValueError, OSError) as exc:
         raise HTTPException(409, str(exc))
     return status(request)
