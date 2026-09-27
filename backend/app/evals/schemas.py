@@ -45,7 +45,15 @@ class EvalParticipant(StrictModel):
     calibrate: bool = False
 
 
+class HarnessOptions(StrictModel):
+    num_fewshot: int | None = Field(default=None, ge=0, le=100)
+    apply_chat_template: bool = False
+    max_length: int = Field(default=4096, ge=512, le=2097152)
+
+
 class EvalRequest(StrictModel):
+    engine: Literal["native", "lm-eval"] = "native"
+    harness: HarnessOptions = Field(default_factory=HarnessOptions)
     name: str = Field(min_length=1, max_length=120)
     participants: list[EvalParticipant] = Field(min_length=1, max_length=8)
     benchmarks: list[str] = Field(min_length=1, max_length=20)
@@ -63,6 +71,22 @@ class EvalRequest(StrictModel):
             raise ValueError("Custom selection requires a sample limit")
         if self.sample_selection == "full" and self.sample_limit is not None:
             raise ValueError("Full selection must not include a sample limit")
+        if self.engine == "lm-eval":
+            from app.evals.harness import TASKS
+
+            if not set(self.benchmarks) <= {t["id"] for t in TASKS}:
+                raise ValueError("Select a supported harness task")
+            if self.judge or any(p.calibrate for p in self.participants):
+                raise ValueError(
+                    "Local judge and native throughput calibration are not used by harness"
+                )
+            if any(p.max_tokens >= self.harness.max_length for p in self.participants):
+                raise ValueError("Max tokens must be smaller than Max sequence length")
+        if any(
+            p.batch_size and p.ubatch_size and p.ubatch_size > p.batch_size
+            for p in self.participants
+        ):
+            raise ValueError("Micro-batch size cannot exceed Batch size")
         if len(set(self.benchmarks)) != len(self.benchmarks):
             raise ValueError("Select each benchmark once")
         return self

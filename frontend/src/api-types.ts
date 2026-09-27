@@ -20,6 +20,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/evaluations/harness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Harness Status */
+        get: operations["harness_status_api_evaluations_harness_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/evaluations/harness/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Harness Install */
+        post: operations["harness_install_api_evaluations_harness_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/evaluations/library": {
         parameters: {
             query?: never;
@@ -168,6 +202,23 @@ export interface paths {
         put?: never;
         /** Cancel */
         post: operations["cancel_api_evaluations_runs__id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/evaluations/runs/{id}/harness-results/{participant}/{task}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Harness Results */
+        get: operations["harness_results_api_evaluations_runs__id__harness_results__participant___task__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -825,6 +876,13 @@ export interface components {
         EvalRequest: {
             /** Benchmarks */
             benchmarks: string[];
+            /**
+             * Engine
+             * @default native
+             * @enum {string}
+             */
+            engine: "native" | "lm-eval";
+            harness?: components["schemas"]["HarnessOptions"];
             judge?: components["schemas"]["EvalParticipant"] | null;
             /**
              * Load Timeout
@@ -913,6 +971,21 @@ export interface components {
              * @enum {string}
              */
             type: "boolean" | "number" | "string" | "enum" | "path";
+        };
+        /** HarnessOptions */
+        HarnessOptions: {
+            /**
+             * Apply Chat Template
+             * @default false
+             */
+            apply_chat_template: boolean;
+            /**
+             * Max Length
+             * @default 4096
+             */
+            max_length: number;
+            /** Num Fewshot */
+            num_fewshot?: number | null;
         };
         /** HealthResponse */
         HealthResponse: {
@@ -1305,6 +1378,50 @@ export interface operations {
             };
         };
     };
+    harness_status_api_evaluations_harness_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    harness_install_api_evaluations_harness_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     library_api_evaluations_library_get: {
         parameters: {
             query?: never;
@@ -1582,6 +1699,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    harness_results_api_evaluations_runs__id__harness_results__participant___task__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                participant: number;
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

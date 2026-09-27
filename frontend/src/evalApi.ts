@@ -35,6 +35,8 @@ export type Metric = {
   errors: number;
   score: number | null;
   metric: string;
+  harness_metric?: string;
+  stderr?: number | null;
 };
 export type Run = {
   id: string;
@@ -46,6 +48,8 @@ export type Run = {
   error?: string | null;
   current?: string;
   phase?: string;
+  requests_completed?: number;
+  requests_total?: number;
   judge_completed?: number;
   judge_total?: number;
   participants: (Participant & {
@@ -70,6 +74,7 @@ export type Sample = {
   error?: string;
   expected?: string;
   judge_output?: string;
+  harness_metrics?: Record<string, unknown>;
   messages?: { role: string; content: string }[];
 };
 export class EvalError extends Error {

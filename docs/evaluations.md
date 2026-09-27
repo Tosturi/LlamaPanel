@@ -3,7 +3,7 @@
 [Documentation](README.md)
 
 Open **Evaluations** from Servers or a server workspace. Add participants using
-saved presets, select each participant's runtime, choose installed benchmarks,
+saved presets, select each participant's runtime, choose an engine and benchmarks,
 and run a comparison. A preset can reference a base GGUF, a different quantization,
 or LoRA adapters. For before/after training, create separate presets first.
 
@@ -16,8 +16,9 @@ are used. A seeded selection is made once and reused for every participant.
 Results include individual answers, conversations, errors, local-judge output,
 and configuration snapshots. Accuracy is reported over successfully scored
 samples; errors and the scored/total count are shown separately. Do not compare
-scores without checking those counts. Truncated responses are errors, not silently
-accepted answers. There is no aggregate quality score across unrelated tests.
+scores without checking those counts. For native suites, output truncated at
+the token limit is an error. Harness applies the selected task's scoring to
+outputs within the requested token budget. There is no aggregate quality score across unrelated tests.
 
 ## Benchmark library
 
@@ -40,10 +41,10 @@ A missing final delimiter is incorrect. This is **not** the lm-evaluation-harnes
 leaderboard recipe; do not compare its scores directly with results using different
 prompts, extraction rules, few-shot counts or model templates.
 
-The first release supports text generation, exact/numeric scoring and fixed
-multi-turn scripts with a local judge. It does not yet run loglikelihood tasks,
-tool/environment agent benchmarks, arbitrary Hugging Face datasets, or harness /
-Inspect tasks. Those need their own execution adapters, not just dataset files.
+The native engine supports text generation, exact/numeric scoring and fixed
+multi-turn scripts with a local judge. Select the optional lm-evaluation-harness
+engine for its supported generation and loglikelihood tasks (see below).
+Tool/environment agent benchmarks and Inspect tasks are not supported.
 
 ## Custom suites
 
@@ -145,3 +146,65 @@ the viewer; both original records remain in the JSONL archive.
 Catalog entries show Update while a downloaded revision remains installed and
 Download after it is removed. Update checks the catalog's pinned source; identical
 content is deduplicated. It does not silently change snapshots of earlier runs.
+
+## lm-evaluation-harness
+
+Select **lm-evaluation-harness** as the engine and install it once from the
+comparison form. The panel creates an independent Python environment under
+`<data_dir>/harness/venv`; installation needs internet access and Python's `venv`
+and `pip`. Its dependencies do not replace the panel's dependencies. The engine
+is pinned to upstream revision `d6de81643928d653435c431bae19945d41d32520`.
+Installation output is saved in `<data_dir>/harness/install.log`.
+
+The initial task selection includes GSM8K, IFEval, ARC Easy/Challenge, HellaSwag,
+Winogrande and BoolQ. Harness owns their prompt construction, few-shot selection,
+answer extraction and metrics. Required data is fetched using Hugging Face's
+cache under `<data_dir>/harness/hf-cache` before the panel stops existing servers.
+The confirmation to stop servers still applies. Dataset and custom-task browsing
+are not part of this integration.
+
+- **Few-shot examples**: leave empty for the task default, or specify zero or more.
+- **Apply model chat template**: use the selected server's template via
+  `/apply-template`. Disabled uses the task's plain completion prompts.
+- **Max sequence length**: the prompt plus requested output budget for one slot.
+  The panel checks the actual context reported by `/props`. Oversized prompts
+  fail instead of being silently truncated.
+- **Concurrent requests**: controls harness parallelism and `llama-server --parallel`.
+  For this HTTP backend, harness's usual `batch_size` is not a VRAM auto-tuner.
+- **Context size**, **Batch size** and **Micro-batch size** are llama-server token
+  settings (`--ctx-size`, `--batch-size`, `--ubatch-size`). Model/CPU offload,
+  flash attention and KV cache types continue to come from the participant preset.
+  With runtimes that divide total context between slots, four 4096-token slots
+  require at least 16384 total context tokens. Verify actual allocation on the
+  selected runtime; increasing concurrency can increase memory use.
+
+Start with one request, then raise concurrency in later comparisons while keeping
+the same task, seeds and generation settings. There is no guaranteed OOM-free
+configuration or automatic VRAM estimator. The native suite's throughput
+calibration is not applied to harness tasks. A resource failure stops the server
+and pauses the run. Resume can lower concurrency and adjust token batch sizes;
+it does not shrink sequence length, output budget or benchmark content.
+Completed request responses are cached on disk per participant/task and reused
+when retrying that task. Cache identities exclude slot numbers so reducing
+concurrency does not invalidate successful requests.
+
+The GGUF backend uses `/v1/completions` and the server's `/tokenize`. Likelihood
+tasks require modern token IDs and logprobs, verified with a capability probe.
+They score continuation tokens separately and can be substantially slower than
+ordinary generation. Per-slot serialization preserves KV cache ownership;
+different slots can score questions concurrently. Rolling likelihood/perplexity,
+multimodal tasks and tasks that execute generated code are not exposed.
+
+Runs store task configurations, dataset split fingerprints and selected document
+indices. Fingerprints must match across participants. Full harness results,
+including all metrics, filters, per-sample responses and effective configuration,
+are retained under `evaluations/<run_id>/harness/<participant>/<task>/results.json`
+and can be exported from **Configuration & calibration**. Dataset fingerprints
+identify cached inputs; they do not guarantee that an upstream dataset will
+remain downloadable forever.
+
+During inference the UI reports model requests, which may outnumber documents
+for multiple-choice tasks. Scores and answer inspection become available when a
+task finishes scoring. Logs include both llama-server and harness output. Pause
+drains the current request batch; cancel terminates the worker and stops its
+server. Panel restart marks unfinished runs interrupted, without automatic resume.
