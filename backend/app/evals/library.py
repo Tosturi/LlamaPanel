@@ -87,6 +87,15 @@ class BenchmarkLibrary:
                         "bytes": path.stat().st_size,
                         "source": data["source"],
                         "recipe": data["recipe"],
+                        "catalog_id": next(
+                            (
+                                c["id"]
+                                for c in CATALOG
+                                if data["source"].startswith(GSM_URL + "#")
+                                and c["id"] == "gsm8k"
+                            ),
+                            None,
+                        ),
                     }
                 )
             except (ValueError, HTTPException) as exc:

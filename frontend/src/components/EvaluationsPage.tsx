@@ -159,6 +159,12 @@ export function EvaluationsPage({
   const [samples, setSamples] = useState<Sample[]>([]);
   const [samplePage, setSamplePage] = useState(0);
   const [showSamples, setShowSamples] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  const [sampleStatus, setSampleStatus] = useState("all");
+  const [sampleParticipants, setSampleParticipants] = useState<number[]>([]);
+  const [samplesLoading, setSamplesLoading] = useState(false);
+  const logElement = useRef<HTMLPreElement>(null);
+  const followLogs = useRef(true);
   const [logs, setLogs] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -184,6 +190,10 @@ export function EvaluationsPage({
     setSamples([]);
     setShowSamples(false);
     setLogs(null);
+    setShowLogs(false);
+    setSampleStatus("all");
+    setSampleParticipants([]);
+    followLogs.current = true;
     setSamplePage(0);
   };
   const refreshLibrary = async () => {
@@ -302,15 +312,78 @@ export function EvaluationsPage({
       } else throw e;
     }
   };
-  const sampleRows = async (page: number) => {
-    if (!run) return;
-    const rows = await evalApi<Sample[]>(
-      `/runs/${run.id}/samples?offset=${page * 50}&limit=50`,
-    );
-    setSamples(rows);
-    setSamplePage(page);
-    setShowSamples(true);
-  };
+  useEffect(() => {
+    if (!active || tab !== "results" || !run || (!showSamples && !showLogs))
+      return;
+    const id = run.id;
+    let disposed = false;
+    let timer: ReturnType<typeof window.setTimeout>;
+    const controller = new AbortController();
+    const poll = async () => {
+      try {
+        const query = new URLSearchParams({
+          offset: String(samplePage * 50),
+          limit: "51",
+          status: sampleStatus,
+        });
+        sampleParticipants.forEach((i) =>
+          query.append("participant", String(i)),
+        );
+        await Promise.all([
+          showSamples
+            ? evalApi<Sample[]>(
+                `/runs/${id}/samples?${query}`,
+                "GET",
+                undefined,
+                controller.signal,
+              ).then((rows) => {
+                if (!disposed && runId.current === id) {
+                  setSamples(rows);
+                  setSamplesLoading(false);
+                }
+              })
+            : Promise.resolve(),
+          showLogs
+            ? evalApi<{ text: string }>(
+                `/runs/${id}/logs`,
+                "GET",
+                undefined,
+                controller.signal,
+              ).then((value) => {
+                if (!disposed && runId.current === id) setLogs(value.text);
+              })
+            : Promise.resolve(),
+        ]);
+      } catch (e) {
+        if (!disposed) {
+          setError(String(e));
+          setSamplesLoading(false);
+        }
+      }
+      if (!disposed && running) timer = window.setTimeout(poll, 2000);
+    };
+    if (showSamples) setSamplesLoading(true);
+    void poll();
+    return () => {
+      disposed = true;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [
+    active,
+    tab,
+    run?.id,
+    run?.state,
+    showLogs,
+    showSamples,
+    samplePage,
+    sampleStatus,
+    sampleParticipants,
+  ]);
+  useEffect(() => {
+    if (followLogs.current && logElement.current)
+      logElement.current.scrollTop = logElement.current.scrollHeight;
+  }, [logs]);
   return (
     <div className="app studio eval-page">
       <header className="app-header">
@@ -319,7 +392,6 @@ export function EvaluationsPage({
         </div>
         <nav aria-label="Main navigation">
           <button onClick={onBack}>Servers</button>
-          <button aria-current="page">Evaluations</button>
         </nav>
         <button className="settings-button" onClick={onSettings}>
           ⚙ Settings
@@ -729,7 +801,9 @@ export function EvaluationsPage({
                       })
                     }
                   >
-                    Download
+                    {library.installed.some((b) => b.catalog_id === c.id)
+                      ? "Update"
+                      : "Download"}
                   </button>
                 </div>
               ))}
@@ -977,33 +1051,29 @@ export function EvaluationsPage({
                     </tbody>
                   </table>
                 </div>
-                <div className="eval-actions">
+                <section className="eval-result-section">
                   <button
-                    disabled={pending}
-                    onClick={() => void act(() => sampleRows(0))}
-                  >
-                    Inspect answers
-                  </button>
-                  <button
-                    disabled={pending}
-                    onClick={() =>
-                      void act(async () =>
-                        setLogs(
-                          (
-                            await evalApi<{ text: string }>(
-                              `/runs/${run.id}/logs`,
-                            )
-                          ).text,
-                        ),
-                      )
-                    }
+                    aria-expanded={showLogs}
+                    aria-controls="eval-run-logs"
+                    onClick={() => setShowLogs((v) => !v)}
                   >
                     Logs
                   </button>
-                </div>
-                {logs !== null && (
-                  <pre className="eval-output">{logs || "No logs yet."}</pre>
-                )}
+                  {showLogs && (
+                    <pre
+                      id="eval-run-logs"
+                      className="eval-output eval-live-logs"
+                      ref={logElement}
+                      onScroll={(e) => {
+                        const el = e.currentTarget;
+                        followLogs.current =
+                          el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+                      }}
+                    >
+                      {logs === null ? "Loading logs…" : logs || "No logs yet."}
+                    </pre>
+                  )}
+                </section>
                 <details className="eval-details">
                   <summary>Configuration & calibration</summary>
                   <pre className="eval-output">
@@ -1025,49 +1095,123 @@ export function EvaluationsPage({
                     Export summary
                   </button>
                 </details>
-                {showSamples && (
-                  <div className="eval-samples">
-                    {samples.map((s, i) => (
-                      <details className="eval-details" key={i}>
-                        <summary>
-                          {run.participants[s.participant]?.preset} · Sample{" "}
-                          {s.sample_id} · {s.phase} ·{" "}
-                          {s.error ? "Error" : (s.score ?? "Unscored")}
-                        </summary>
-                        {s.error && <p className="error-banner">{s.error}</p>}
-                        {s.messages?.map((m, j) => (
-                          <div key={j}>
-                            <strong>{m.role}</strong>
-                            <pre className="eval-output">{m.content}</pre>
-                          </div>
-                        ))}
-                        {s.expected != null && <p>Expected: {s.expected}</p>}
-                        {s.judge_output && (
-                          <pre className="eval-output">{s.judge_output}</pre>
-                        )}
-                      </details>
-                    ))}
-                    <div className="eval-actions">
-                      <button
-                        disabled={pending || samplePage === 0}
-                        onClick={() =>
-                          void act(() => sampleRows(samplePage - 1))
-                        }
-                      >
-                        Previous
-                      </button>
-                      <span>Page {samplePage + 1}</span>
-                      <button
-                        disabled={pending || samples.length < 50}
-                        onClick={() =>
-                          void act(() => sampleRows(samplePage + 1))
-                        }
-                      >
-                        Next
-                      </button>
+                <section className="eval-result-section">
+                  <button
+                    aria-expanded={showSamples}
+                    aria-controls="eval-run-answers"
+                    onClick={() => setShowSamples((v) => !v)}
+                  >
+                    Inspect answers
+                  </button>
+                  {showSamples && (
+                    <div className="eval-samples" id="eval-run-answers">
+                      <div className="eval-answer-filters">
+                        <label>
+                          Status
+                          <select
+                            value={sampleStatus}
+                            onChange={(e) => {
+                              setSampleStatus(e.target.value);
+                              setSamplePage(0);
+                              setSamples([]);
+                            }}
+                          >
+                            <option value="all">All</option>
+                            <option value="passed">Passed</option>
+                            <option value="failed">Failed</option>
+                            <option value="error">Errors</option>
+                            <option value="pending">Pending score</option>
+                            <option value="scored">Judge scored</option>
+                          </select>
+                        </label>
+                        <fieldset>
+                          <legend>Participants</legend>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={sampleParticipants.length === 0}
+                              onChange={() => {
+                                setSampleParticipants([]);
+                                setSamplePage(0);
+                                setSamples([]);
+                              }}
+                            />
+                            All
+                          </label>
+                          {run.participants.map((p, i) => (
+                            <label key={i}>
+                              <input
+                                type="checkbox"
+                                checked={sampleParticipants.includes(i)}
+                                onChange={() => {
+                                  setSampleParticipants((old) =>
+                                    old.includes(i)
+                                      ? old.filter((n) => n !== i)
+                                      : [...old, i],
+                                  );
+                                  setSamplePage(0);
+                                  setSamples([]);
+                                }}
+                              />
+                              {p.preset}
+                            </label>
+                          ))}
+                        </fieldset>
+                      </div>
+                      {samples.length === 0 && (
+                        <p className="muted">
+                          {samplesLoading
+                            ? "Loading answers…"
+                            : "No matching answers yet."}
+                        </p>
+                      )}
+                      {samples.slice(0, 50).map((s) => (
+                        <details
+                          className="eval-details"
+                          key={`${s.participant}:${s.benchmark}:${s.sample_id}`}
+                        >
+                          <summary>
+                            {run.participants[s.participant]?.preset} · Sample{" "}
+                            {s.sample_id} · {s.status}
+                            {s.score != null && ` · Score: ${s.score}`}
+                          </summary>
+                          {s.error && <p className="error-banner">{s.error}</p>}
+                          {s.messages?.map((m, j) => (
+                            <div key={j}>
+                              <strong>{m.role}</strong>
+                              <pre className="eval-output">{m.content}</pre>
+                            </div>
+                          ))}
+                          {s.expected != null && <p>Expected: {s.expected}</p>}
+                          {s.judge_output && (
+                            <pre className="eval-output">{s.judge_output}</pre>
+                          )}
+                        </details>
+                      ))}
+                      <div className="eval-actions">
+                        <button
+                          disabled={samplesLoading || samplePage === 0}
+                          onClick={() => (
+                            setSamples([]),
+                            setSamplePage(samplePage - 1)
+                          )}
+                        >
+                          Previous
+                        </button>
+                        <span>Page {samplePage + 1}</span>
+                        <button
+                          disabled={samplesLoading || samples.length <= 50}
+                          onClick={() => (
+                            setSamples([]),
+                            setSamplePage(samplePage + 1)
+                          )}
+                        >
+                          Next
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </section>
               </section>
             )}
           </>
