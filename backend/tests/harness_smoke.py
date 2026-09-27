@@ -5,6 +5,7 @@ Run using the optional harness Python; no models, HF access or GPU are needed.
 
 import importlib.util
 import json
+import sqlite3
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +20,28 @@ worker_path = Path(__file__).parents[1] / "app/evals/harness_worker.py"
 spec = importlib.util.spec_from_file_location("worker", worker_path)
 worker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(worker)
+
+
+def checked_run(config, directory):
+    connections = []
+    connect = sqlite3.connect
+
+    def tracked_connect(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connections.append(connection)
+        return connection
+
+    try:
+        with patch.object(worker.sqlite3, "connect", side_effect=tracked_connect):
+            return worker.run(config, directory)
+    finally:
+        # Retain references so GC cannot hide a leaked handle on Linux.
+        for connection in connections:
+            try:
+                connection.execute("SELECT 1")
+            except sqlite3.ProgrammingError:
+                continue
+            raise AssertionError("Worker left its response cache open")
 
 
 class TinyTask(ConfigurableTask):
@@ -172,8 +195,8 @@ def main():
                     "lm_eval.tasks.get_task_dict",
                     side_effect=lambda *a, **kw: {"tiny": task(kind)},
                 ):
-                    worker.run({**config, "prepare": True}, directory)
-                    worker.run(config, directory)
+                    checked_run({**config, "prepare": True}, directory)
+                    checked_run(config, directory)
                     result = json.loads((directory / "results.json").read_text())
                     assert len(result["samples"]["tiny"]) == 2
                     metric = (
@@ -185,7 +208,7 @@ def main():
                     if kind != "generate_until":
                         assert result["results"]["tiny"]["acc_norm,none"] == 1
                     before = len([c for c in Server.calls if c[0] == "/v1/completions"])
-                    worker.run(config, directory)
+                    checked_run(config, directory)
                     after = len([c for c in Server.calls if c[0] == "/v1/completions"])
                     # The likelihood capability probe is intentionally repeated.
                     assert after - before == (0 if kind == "generate_until" else 1)
@@ -193,7 +216,7 @@ def main():
                     manifest["indices"] = [999]
                     (directory / "manifest.json").write_text(json.dumps(manifest))
                     try:
-                        worker.run(config, directory)
+                        checked_run(config, directory)
                         raise AssertionError("Changed dataset accepted")
                     except ValueError as exc:
                         assert "changed between participants" in str(exc)
@@ -209,21 +232,21 @@ def main():
             ):
                 Server.context = 1024
                 try:
-                    worker.run(config, directory)
+                    checked_run(config, directory)
                     raise AssertionError("Insufficient context accepted")
                 except ValueError as exc:
                     assert "context per slot" in str(exc)
                 Server.context = 4096
                 Server.fail_next = True
                 try:
-                    worker.run(config, directory)
+                    checked_run(config, directory)
                     raise AssertionError("OOM swallowed")
                 except worker.ResourceFailure:
                     pass
-                worker.run(config, directory)
+                checked_run(config, directory)
                 config["chat_template"] = True
                 # A different prompt produces a different response-cache key.
-                worker.run(config, directory)
+                checked_run(config, directory)
                 assert any(p == "/apply-template" for p, _ in Server.calls)
             print(
                 "Real harness integration passed: generation, likelihood, response reuse, dataset guard, context guard, resource recovery, chat template."
