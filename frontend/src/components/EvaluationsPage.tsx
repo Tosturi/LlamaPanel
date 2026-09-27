@@ -1126,36 +1126,38 @@ export function EvaluationsPage({
                         </label>
                         <fieldset>
                           <legend>Participants</legend>
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={sampleParticipants.length === 0}
-                              onChange={() => {
-                                setSampleParticipants([]);
-                                setSamplePage(0);
-                                setSamples([]);
-                              }}
-                            />
-                            All
-                          </label>
-                          {run.participants.map((p, i) => (
-                            <label key={i}>
+                          <div className="eval-participant-options">
+                            <label>
                               <input
                                 type="checkbox"
-                                checked={sampleParticipants.includes(i)}
+                                checked={sampleParticipants.length === 0}
                                 onChange={() => {
-                                  setSampleParticipants((old) =>
-                                    old.includes(i)
-                                      ? old.filter((n) => n !== i)
-                                      : [...old, i],
-                                  );
+                                  setSampleParticipants([]);
                                   setSamplePage(0);
                                   setSamples([]);
                                 }}
                               />
-                              {p.preset}
+                              All
                             </label>
-                          ))}
+                            {run.participants.map((p, i) => (
+                              <label key={i}>
+                                <input
+                                  type="checkbox"
+                                  checked={sampleParticipants.includes(i)}
+                                  onChange={() => {
+                                    setSampleParticipants((old) =>
+                                      old.includes(i)
+                                        ? old.filter((n) => n !== i)
+                                        : [...old, i],
+                                    );
+                                    setSamplePage(0);
+                                    setSamples([]);
+                                  }}
+                                />
+                                {p.preset}
+                              </label>
+                            ))}
+                          </div>
                         </fieldset>
                       </div>
                       {samples.length === 0 && (
