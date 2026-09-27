@@ -145,12 +145,3 @@ the viewer; both original records remain in the JSONL archive.
 Catalog entries show Update while a downloaded revision remains installed and
 Download after it is removed. Update checks the catalog's pinned source; identical
 content is deduplicated. It does not silently change snapshots of earlier runs.
-
-### Known source-data errors
-
-The pinned GSM8K test split has an incorrect reference for sample `1309` (zero-based).
-For the carnival fundraising question, the amounts are 750, 430, 700, and 300,
-which total **2180**. The source solution substitutes 400 for 300 in its final sum
-and labels the answer **2280**. LlamaPanel faithfully imports that reference, so
-2180 is marked incorrect by this dataset. The original dataset is preserved for
-reproducibility; a corrected dataset should be imported as a separate revision.
