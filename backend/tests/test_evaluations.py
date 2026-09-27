@@ -164,7 +164,7 @@ async def test_sequential_comparison_and_local_judge(service, monkeypatch):
         "suite"
     ]["samples"]
     rows = svc.results(svc.run["id"])
-    assert len(rows) == 12 and len({r["sample_id"] for r in rows}) == 3
+    assert len(rows) == 6 and len({r["sample_id"] for r in rows}) == 3
 
 
 @pytest.mark.asyncio
@@ -411,3 +411,104 @@ async def test_scaled_lora_file_snapshot(settings, monkeypatch):
         result = await app.state.evaluations.snapshot(EvalParticipant(preset="Adapted"))
         assert any(f["path"] == str(adapter) for f in result["files"])
         assert result["flags"]["lora_scaled"] == [f"{adapter}:0.5"]
+
+
+@pytest.mark.asyncio
+async def test_results_filters_precede_pagination_and_judge_replaces_generation(
+    service,
+):
+    svc = service
+    id = "a" * 32
+    document(svc._dir(id) / "run.json", "run").save(
+        {"id": id, "metrics": {"1:judge": {"metric": "judge_score"}}}
+    )
+    rows = [
+        dict(
+            participant=i % 3,
+            benchmark="b",
+            sample_id=str(i),
+            score=i % 2,
+            phase="generation",
+        )
+        for i in range(120)
+    ]
+    rows += [
+        dict(
+            participant=1,
+            benchmark="judge",
+            sample_id="j",
+            score=None,
+            phase="generation",
+        ),
+        dict(participant=1, benchmark="judge", sample_id="j", score=4, phase="judging"),
+        dict(participant=2, benchmark="b", sample_id="e", score=None, error="timeout"),
+        dict(participant=2, benchmark="b", sample_id="p", score=None),
+    ]
+    path = svc._dir(id) / "samples.jsonl"
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows) + "{", encoding="utf-8")
+    matches = [r for r in rows[:120] if r["participant"] in [0, 2] and r["score"] == 0]
+    actual = svc.results(id, offset=5, limit=7, participants=[0, 2], status="failed")
+    assert [r["sample_id"] for r in actual] == [r["sample_id"] for r in matches[5:12]]
+    assert len(svc.results(id, limit=500)) == 123
+    assert svc.results(id, status="scored")[0]["score"] == 4
+    assert len(svc.results(id, status="pending")) == 1
+    assert len(svc.results(id, status="error")) == 1
+
+
+@pytest.mark.asyncio
+async def test_completed_run_archives_logs_before_cleanup(service, monkeypatch):
+    svc = service
+    benchmark = svc.library.install(suite())
+
+    async def chat(*args):
+        path = svc.log_path(svc.run["id"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a") as f:
+            f.write("owned output\n")
+        return "ok", 1
+
+    monkeypatch.setattr(svc, "chat", chat)
+    await svc.start(
+        EvalRequest(
+            name="Logs",
+            participants=[EvalParticipant(preset="A")],
+            benchmarks=[benchmark],
+        )
+    )
+    await svc.task
+    assert svc.run["state"] == "completed"
+    id = svc.run["id"]
+    archive = svc.log_path(id)
+    assert archive == svc._dir(id) / "llama-server.log"
+    original = archive.read_text()
+    assert original.count("owned output") == 5
+    source = (
+        svc.app.state.settings.data_dir
+        / "instances"
+        / svc.run["instance_id"]
+        / "llama-server.log"
+    )
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("unrelated output")
+    assert svc.log_path(id).read_text() == original
+    await svc.start(
+        EvalRequest(
+            name="Next",
+            participants=[EvalParticipant(preset="B")],
+            benchmarks=[benchmark],
+        )
+    )
+    await svc.task
+    assert svc.log_path(id).read_text() == original
+
+
+def test_catalog_identity_survives_existing_install(tmp_path):
+    from app.evals.library import GSM_URL, GSM_SHA256
+
+    lib = BenchmarkLibrary(tmp_path)
+    id = lib.install(
+        suite(), f"{GSM_URL}#sha256={GSM_SHA256}", "llamapanel-gsm8k-zero-shot-v1"
+    )
+    assert lib.list()[0]["catalog_id"] == "gsm8k"
+    lib.remove(id)
+    assert lib.list() == []

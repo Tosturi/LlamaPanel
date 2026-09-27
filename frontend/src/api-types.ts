@@ -1703,6 +1703,8 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+                participant?: number[] | null;
+                status?: "all" | "passed" | "failed" | "error" | "pending" | "scored";
             };
             header?: never;
             path: {

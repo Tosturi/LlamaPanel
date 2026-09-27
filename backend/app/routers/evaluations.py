@@ -1,5 +1,6 @@
 import asyncio
 import json
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import ValidationError
@@ -120,23 +121,18 @@ async def samples(
     request: Request,
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    participant: list[int] | None = Query(None),
+    status: Literal["all", "passed", "failed", "error", "pending", "scored"] = "all",
 ) -> list[dict]:
-    return await asyncio.to_thread(service(request).results, id, offset, limit)
+    return await asyncio.to_thread(
+        service(request).results, id, offset, limit, participant, status
+    )
 
 
 @router.get("/runs/{id}/logs")
 async def logs(id: str, request: Request) -> dict:
     svc = service(request)
-    value = svc.get(id)
-    instance_id = value.get("instance_id")
-    if not instance_id:
-        return {"text": ""}
-    path = (
-        request.app.state.settings.data_dir
-        / "instances"
-        / instance_id
-        / "llama-server.log"
-    )
+    path = svc.log_path(id)
 
     # Read only the tail; model loading logs may be large.
     def read():

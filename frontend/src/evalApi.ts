@@ -10,6 +10,7 @@ export type Benchmark = {
   bytes?: number;
   source?: string;
   recipe?: string;
+  catalog_id?: string;
   error?: string;
 };
 export type Library = {
@@ -63,6 +64,7 @@ export type Sample = {
   benchmark: string;
   sample_id: string;
   phase: string;
+  status: string;
   output?: string;
   score?: number | null;
   error?: string;

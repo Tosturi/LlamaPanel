@@ -4,6 +4,7 @@ import asyncio
 import copy
 import json
 import math
+import shutil
 import random
 import re
 import time
@@ -133,22 +134,74 @@ class EvaluationService:
             for r in sorted(rows, key=lambda r: r["created_at"], reverse=True)
         ]
 
-    def results(self, id, offset=0, limit=100):
-        self.get(id)
-        rows = []
+    def results(self, id, offset=0, limit=100, participants=None, status="all"):
+        run = self.get(id)
+        # Keep offsets, not conversations, in memory. Judge records replace
+        # generation records while preserving the original sample order.
+        positions = {}
         path = self._dir(id) / "samples.jsonl"
-        if path.exists():
-            with path.open(encoding="utf-8") as f:
-                for i, line in enumerate(f):
-                    if i < offset:
-                        continue
-                    if len(rows) == limit:
-                        break
-                    try:
-                        rows.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        break  # preserve preceding samples after an interrupted append
-        return rows
+        if not path.exists():
+            return []
+        with path.open("rb") as f:
+            while True:
+                position = f.tell()
+                line = f.readline()
+                if not line:
+                    break
+                try:
+                    row = json.loads(line)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    break  # an append may still be in progress
+                key = (row["participant"], row["benchmark"], row["sample_id"])
+                metric = (
+                    run.get("metrics", {})
+                    .get(f"{row['participant']}:{row['benchmark']}", {})
+                    .get("metric", "accuracy")
+                )
+                if row.get("error"):
+                    outcome = "error"
+                elif row.get("score") is None:
+                    outcome = "pending"
+                elif metric != "accuracy":
+                    outcome = "scored"
+                else:
+                    outcome = "passed" if row["score"] == 1 else "failed"
+                positions[key] = (position, outcome)
+            selected = []
+            matched = 0
+            for key, (position, outcome) in positions.items():
+                if participants and key[0] not in participants:
+                    continue
+                if status != "all" and outcome != status:
+                    continue
+                matched += 1
+                if matched <= offset:
+                    continue
+                f.seek(position)
+                selected.append({**json.loads(f.readline()), "status": outcome})
+                if len(selected) == limit:
+                    break
+        return selected
+
+    def log_path(self, id):
+        value = self.get(id)
+        archive = self._dir(id) / "llama-server.log"
+        if archive.exists() or not value.get("instance_id"):
+            return archive
+        return (
+            self.app.state.settings.data_dir
+            / "instances"
+            / value["instance_id"]
+            / "llama-server.log"
+        )
+
+    def archive_logs(self):
+        target = self._dir(self.run["id"]) / "llama-server.log"
+        source = self.log_path(self.run["id"])
+        if source != target and source.exists():
+            temporary = target.with_suffix(".tmp")
+            shutil.copyfile(source, temporary)
+            temporary.replace(target)
 
     async def persist(self):
         async with self.persist_lock:
@@ -565,6 +618,7 @@ class EvaluationService:
         registry = self.app.state.instances
         req = self.run["request"]
         pending_judge = []
+        final_state, final_error = "completed", None
         try:
             async with registry.lock:
                 for item in busy:
@@ -691,27 +745,28 @@ class EvaluationService:
                     await registry.managers[self.instance_id].stop()
                 if pending_judge:
                     await self.judge(client, pending_judge)
-            await self.state("completed", finished_at=time.time(), error=None)
         except asyncio.CancelledError:
-            await self.state("cancelled", finished_at=time.time())
+            final_state, final_error = "cancelled", self.run.get("error")
         except Exception as exc:
-            await self.state("failed", error=str(exc), finished_at=time.time())
+            final_state, final_error = "failed", str(exc)
         finally:
             try:
                 if self.instance_id in registry.managers:
                     manager = registry.managers[self.instance_id]
                     await manager.stop()
+                    await asyncio.to_thread(self.archive_logs)
                     registry.checkpoint(self.instance_id)
                     await registry.delete(self.instance_id)
             except Exception as exc:
-                await self.state(
-                    "failed",
-                    error=f"Evaluation cleanup failed: {exc}. Stop the Evaluation instance in Servers.",
-                )
+                final_state = "failed"
+                final_error = f"Evaluation cleanup failed: {exc}. Stop the Evaluation instance in Servers."
             finally:
                 registry.eval_active = False
                 self.instance_id = None
                 self.current = None
+                await self.state(
+                    final_state, error=final_error, finished_at=time.time()
+                )
 
     async def judge(self, client, rows):
         p = self.run["judge"]
