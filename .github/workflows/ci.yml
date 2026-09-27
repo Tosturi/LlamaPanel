@@ -73,9 +73,9 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install -r backend/requirements-dev.txt
-      - name: Check updater and rollback
+      - name: Check updater, rollback and JSON storage
         working-directory: backend
-        run: pytest -v tests/test_updates.py tests/test_model_downloads.py
+        run: pytest -v tests/test_updates.py tests/test_model_downloads.py tests/test_storage.py
 
   frontend:
     name: Frontend typecheck & build

@@ -145,3 +145,68 @@ def test_save_leaves_no_temp_files_behind(path):
     store.save([1])
     store.save([2])
     assert [p.name for p in path.parent.iterdir()] == ["items.json"]
+
+
+@pytest.mark.parametrize('code', [5, 32, 33])
+def test_windows_replace_retries_without_removing_old_document(path, monkeypatch, code):
+    import app.storage as storage
+    store = _store(path)
+    store.save([1])
+    replace = storage.os.replace
+    attempts = []
+    def busy(source, target):
+        attempts.append(1)
+        assert _read(path)['items'] == [1]
+        if len(attempts) < 3:
+            error = PermissionError('temporarily busy')
+            error.winerror = code
+            raise error
+        return replace(source, target)
+    monkeypatch.setattr(storage.os, 'replace', busy)
+    monkeypatch.setattr(storage.time, 'sleep', lambda delay: None)
+    store.save([2])
+    assert len(attempts) == 3
+    assert store.load() == [2]
+    assert list(path.parent.iterdir()) == [path]
+
+
+def test_persistent_replace_failure_preserves_data_and_cleans_temp(path, monkeypatch):
+    import app.storage as storage
+    store = _store(path)
+    store.save([1])
+    attempts = []
+    def denied(*args):
+        attempts.append(1)
+        error = PermissionError('denied')
+        error.winerror = 5
+        raise error
+    monkeypatch.setattr(storage.os, 'replace', denied)
+    monkeypatch.setattr(storage.time, 'sleep', lambda delay: None)
+    with pytest.raises(PermissionError):
+        store.save([2])
+    assert len(attempts) == 8
+    assert store.load() == [1]
+    assert list(path.parent.iterdir()) == [path]
+
+
+def test_read_permission_error_does_not_quarantine_valid_json(path, monkeypatch):
+    store = _store(path)
+    store.save([1])
+    original = path.read_bytes()
+    def denied(*args, **kwargs):
+        raise PermissionError('read denied')
+    monkeypatch.setattr(type(path), 'read_text', denied)
+    with pytest.raises(PermissionError):
+        store.load()
+    assert path.read_bytes() == original
+    assert list(path.parent.iterdir()) == [path]
+
+
+def test_separate_stores_serialize_updates_to_same_path(path):
+    from concurrent.futures import ThreadPoolExecutor
+    stores = [_store(path) for _ in range(8)]
+    def append(i):
+        stores[i % len(stores)].update(lambda data: data + [i])
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(append, range(80)))
+    assert sorted(_store(path).load()) == list(range(80))

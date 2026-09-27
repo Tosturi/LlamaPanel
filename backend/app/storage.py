@@ -35,10 +35,39 @@ import time
 from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Iterable, Optional
+from weakref import WeakValueDictionary
 
 from app import __version__
 
 Migration = Callable[[Any], Any]
+
+
+_path_locks = WeakValueDictionary()
+_path_locks_guard = Lock()
+
+
+def _path_lock(path: Path):
+    key = os.path.normcase(str(path.resolve()))
+    with _path_locks_guard:
+        lock = _path_locks.get(key)
+        if lock is None:
+            lock = Lock()
+            _path_locks[key] = lock
+        return lock
+
+
+def _replace_atomic(source, target):
+    # Windows readers, indexers or antivirus may briefly deny replacement.
+    # Keep the old document intact; never fall back to delete-then-rename.
+    delays = (0.01, 0.02, 0.04, 0.08, 0.16, 0.25, 0.25)
+    for attempt in range(len(delays) + 1):
+        try:
+            os.replace(source, target)
+            return
+        except OSError as exc:
+            if getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == len(delays):
+                raise
+            time.sleep(delays[attempt])
 
 
 class StoreError(Exception):
@@ -85,7 +114,7 @@ class JsonDocumentStore:
         self._version = version
         self._migrations = migrations
         self._empty = empty
-        self._lock = Lock()
+        self._lock = _path_lock(path)
 
     @property
     def path(self) -> Path:
@@ -137,7 +166,7 @@ class JsonDocumentStore:
             return self._empty()
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             moved = self._quarantine()
             print(f"WARNING: {self._path} is not valid JSON ({exc}); moved it to {moved}", flush=True)
             return self._empty()
@@ -173,7 +202,7 @@ class JsonDocumentStore:
         while target.exists():
             target = self._path.with_name(f"{self._path.name}.corrupt-{stamp}-{n}")
             n += 1
-        os.replace(self._path, target)
+        _replace_atomic(self._path, target)
         return target
 
     def _save_locked(self, payload: Any) -> None:
@@ -187,7 +216,7 @@ class JsonDocumentStore:
                 f.write(text)
                 f.flush()
                 os.fsync(f.fileno())
-            os.replace(tmp_path, target)
+            _replace_atomic(tmp_path, target)
         except BaseException:
             try:
                 os.unlink(tmp_path)
