@@ -29,12 +29,14 @@ function ParticipantFields({
   presets,
   runtimes,
   judge = false,
+  harness = false,
 }: {
   value: Participant;
   onChange: (p: Participant) => void;
   presets: Preset[];
   runtimes: RuntimeConfig[];
   judge?: boolean;
+  harness?: boolean;
 }) {
   const change = (key: keyof Participant, next: unknown) =>
     onChange({ ...value, [key]: next });
@@ -108,7 +110,7 @@ function ParticipantFields({
           --ctx-size; its allocation depends on the selected runtime.
         </p>
       </details>
-      {!judge && (
+      {!judge && !harness && (
         <details className="eval-details">
           <summary>Throughput calibration</summary>
           <label className="eval-check">
@@ -138,6 +140,17 @@ export function EvaluationsPage({
   onBack: () => void;
   onSettings: () => void;
 }) {
+  const [engine, setEngine] = useState<"native" | "lm-eval">("native");
+  const [harness, setHarness] = useState<{
+    state: string;
+    revision: string;
+    error?: string;
+    tasks: { id: string; type: string }[];
+  } | null>(null);
+  const [harnessTasks, setHarnessTasks] = useState<string[]>(["gsm8k"]);
+  const [fewshot, setFewshot] = useState("");
+  const [chatTemplate, setChatTemplate] = useState(false);
+  const [maxLength, setMaxLength] = useState("4096");
   const [tab, setTab] = useState<"new" | "library" | "results">("new");
   const [presets, setPresets] = useState<Preset[]>([]);
   const [runtimes, setRuntimes] = useState<RuntimeConfig[]>([]);
@@ -181,9 +194,11 @@ export function EvaluationsPage({
   const runId = useRef<string | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const running = !!run && activeStates.has(run.state);
-  const needsJudge = library?.installed.some(
-    (b) => benchmarks.includes(b.id) && b.scorer === "local_judge",
-  );
+  const needsJudge =
+    engine === "native" &&
+    library?.installed.some(
+      (b) => benchmarks.includes(b.id) && b.scorer === "local_judge",
+    );
   const setSelectedRun = (r: Run) => {
     runId.current = r.id;
     setRun(r);
@@ -290,6 +305,28 @@ export function EvaluationsPage({
       window.clearTimeout(timer);
     };
   }, [active, running, library?.download.state]);
+  useEffect(() => {
+    if (!active || engine !== "lm-eval" || tab !== "new") return;
+    let disposed = false;
+    let timer: ReturnType<typeof window.setTimeout>;
+    const poll = async () => {
+      try {
+        const next = await evalApi<NonNullable<typeof harness>>("/harness");
+        if (!disposed) {
+          setHarness(next);
+          if (next.state === "installing")
+            timer = window.setTimeout(poll, 2000);
+        }
+      } catch (e) {
+        if (!disposed) setError(String(e));
+      }
+    };
+    void poll();
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+    };
+  }, [active, engine, tab, harness?.state]);
   const submit = async (request: ComparisonRequest) => {
     try {
       const next = await evalApi<Run>("/runs", "POST", request);
@@ -461,8 +498,17 @@ export function EvaluationsPage({
               void act(() =>
                 submit({
                   name,
-                  participants,
-                  benchmarks,
+                  engine,
+                  harness: {
+                    num_fewshot: fewshot === "" ? null : Number(fewshot),
+                    apply_chat_template: chatTemplate,
+                    max_length: Number(maxLength),
+                  },
+                  participants:
+                    engine === "lm-eval"
+                      ? participants.map((p) => ({ ...p, calibrate: false }))
+                      : participants,
+                  benchmarks: engine === "lm-eval" ? harnessTasks : benchmarks,
                   sample_selection: selection,
                   sample_limit: selection === "custom" ? Number(limit) : null,
                   seed: Number(seed),
@@ -475,6 +521,85 @@ export function EvaluationsPage({
             }}
           >
             <fieldset disabled={pending || running} className="eval-form">
+              <section className="panel eval-section">
+                <h2>Evaluation engine</h2>
+                <label className="eval-field">
+                  Engine
+                  <select
+                    value={engine}
+                    onChange={(e) => setEngine(e.target.value as typeof engine)}
+                  >
+                    <option value="native">LlamaPanel suites</option>
+                    <option value="lm-eval">lm-evaluation-harness</option>
+                  </select>
+                </label>
+                {engine === "lm-eval" && (
+                  <div className="eval-harness-settings">
+                    <p className="muted">
+                      {harness?.state === "ready"
+                        ? `Installed · ${harness.revision.slice(0, 12)}`
+                        : harness?.state === "installing"
+                          ? "Installing lm-evaluation-harness…"
+                          : "Install the evaluation engine in a separate Python environment."}
+                    </p>
+                    {harness?.state !== "ready" && (
+                      <button
+                        type="button"
+                        disabled={harness?.state === "installing"}
+                        onClick={() =>
+                          void act(async () => {
+                            setHarness(
+                              await evalApi("/harness/install", "POST"),
+                            );
+                          })
+                        }
+                      >
+                        Install lm-evaluation-harness
+                      </button>
+                    )}
+                    {harness?.error && (
+                      <p className="error-banner">{harness.error}</p>
+                    )}
+                    <div className="eval-fields">
+                      <label className="eval-field">
+                        Few-shot examples
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          placeholder="Task default"
+                          value={fewshot}
+                          onChange={(e) => setFewshot(e.target.value)}
+                        />
+                      </label>
+                      <label className="eval-field">
+                        Max sequence length (tokens)
+                        <input
+                          type="number"
+                          min="512"
+                          max="2097152"
+                          required
+                          value={maxLength}
+                          onChange={(e) => setMaxLength(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <label className="eval-check">
+                      <input
+                        type="checkbox"
+                        checked={chatTemplate}
+                        onChange={(e) => setChatTemplate(e.target.checked)}
+                      />
+                      Apply model chat template
+                    </label>
+                    <p className="muted eval-help">
+                      Sequence length includes the prompt and output for each
+                      server slot. Tasks download their required data on first
+                      use.
+                    </p>
+                  </div>
+                )}
+              </section>
               <section className="panel eval-section">
                 <div className="panel-header">
                   <h2>Participants</h2>
@@ -507,6 +632,7 @@ export function EvaluationsPage({
                       </div>
                       <ParticipantFields
                         value={p}
+                        harness={engine === "lm-eval"}
                         presets={presets}
                         runtimes={runtimes}
                         onChange={(v) =>
@@ -526,38 +652,63 @@ export function EvaluationsPage({
               <section className="panel eval-section">
                 <div className="panel-header">
                   <h2>Benchmarks</h2>
-                  <button type="button" onClick={() => setTab("library")}>
-                    Manage library
-                  </button>
+                  {engine === "native" && (
+                    <button type="button" onClick={() => setTab("library")}>
+                      Manage library
+                    </button>
+                  )}
                 </div>
-                {!library?.installed.length && (
+                {engine === "native" && !library?.installed.length && (
                   <p className="muted eval-help">
                     Download a benchmark or import a suite in Benchmark library.
                   </p>
                 )}
-                {library?.installed.map((b) => (
-                  <label className="eval-benchmark" key={b.id}>
-                    <input
-                      type="checkbox"
-                      disabled={!!b.error}
-                      checked={benchmarks.includes(b.id)}
-                      onChange={(e) =>
-                        setBenchmarks((ids) =>
-                          e.target.checked
-                            ? [...ids, b.id]
-                            : ids.filter((id) => id !== b.id),
-                        )
-                      }
-                    />
-                    <span>
-                      <strong>{b.name}</strong>
-                      <span className="muted">
-                        {b.error ||
-                          `${b.samples.toLocaleString()} samples · ${b.scorer?.replace(/_/g, " ")}`}
+                {engine === "native" &&
+                  library?.installed.map((b) => (
+                    <label className="eval-benchmark" key={b.id}>
+                      <input
+                        type="checkbox"
+                        disabled={!!b.error}
+                        checked={benchmarks.includes(b.id)}
+                        onChange={(e) =>
+                          setBenchmarks((ids) =>
+                            e.target.checked
+                              ? [...ids, b.id]
+                              : ids.filter((id) => id !== b.id),
+                          )
+                        }
+                      />
+                      <span>
+                        <strong>{b.name}</strong>
+                        <span className="muted">
+                          {b.error ||
+                            `${b.samples.toLocaleString()} samples · ${b.scorer?.replace(/_/g, " ")}`}
+                        </span>
                       </span>
-                    </span>
-                  </label>
-                ))}
+                    </label>
+                  ))}
+                {engine === "lm-eval" &&
+                  harness?.tasks.map((t) => (
+                    <label className="eval-benchmark" key={t.id}>
+                      <input
+                        type="checkbox"
+                        checked={harnessTasks.includes(t.id)}
+                        onChange={(e) =>
+                          setHarnessTasks((old) =>
+                            e.target.checked
+                              ? [...old, t.id]
+                              : old.filter((id) => id !== t.id),
+                          )
+                        }
+                      />
+                      <span>
+                        <strong>{t.id}</strong>
+                        <span className="muted">
+                          {t.type.replace(/_/g, " ")}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
                 <div className="eval-fields eval-selection">
                   <label className="eval-field">
                     Sample selection
@@ -640,12 +791,19 @@ export function EvaluationsPage({
               </details>
               <div className="eval-footer">
                 <span>
-                  {participants.length} participants · {benchmarks.length}{" "}
+                  {participants.length} participants ·{" "}
+                  {(engine === "lm-eval" ? harnessTasks : benchmarks).length}{" "}
                   benchmarks
                 </span>
                 <button
                   className="primary"
-                  disabled={!benchmarks.length || !presets.length || !!confirm}
+                  disabled={
+                    !(engine === "lm-eval" ? harnessTasks : benchmarks)
+                      .length ||
+                    !presets.length ||
+                    !!confirm ||
+                    (engine === "lm-eval" && harness?.state !== "ready")
+                  }
                   type="submit"
                 >
                   Run comparison
@@ -935,6 +1093,14 @@ export function EvaluationsPage({
                     </p>
                   </>
                 )}
+                {run.phase === "harness" && (
+                  <p className="muted">
+                    {run.current}
+                    {running && run.requests_total
+                      ? ` · ${run.requests_completed} / ${run.requests_total} model requests`
+                      : ""}
+                  </p>
+                )}
                 {run.error && (
                   <p role="alert" className="error-banner">
                     {run.error}
@@ -942,6 +1108,14 @@ export function EvaluationsPage({
                 )}
                 {run.state === "paused" && (
                   <div className="eval-recovery">
+                    {run.phase === "harness" && (
+                      <p className="muted">
+                        {run.current}
+                        {running && run.requests_total
+                          ? ` · ${run.requests_completed} / ${run.requests_total} model requests`
+                          : ""}
+                      </p>
+                    )}
                     {run.error && (
                       <div className="eval-fields">
                         {(
@@ -1026,7 +1200,9 @@ export function EvaluationsPage({
                           <tr key={id}>
                             <th>
                               {row[0].name}
-                              <small>{row[0].metric}</small>
+                              <small>
+                                {row[0].harness_metric ?? row[0].metric}
+                              </small>
                             </th>
                             {run.participants.map((_, i) => {
                               const m = row.find((r) => r.participant === i);
@@ -1076,6 +1252,20 @@ export function EvaluationsPage({
                 </section>
                 <details className="eval-details">
                   <summary>Configuration & calibration</summary>
+                  {run.request.engine === "lm-eval" && (
+                    <div className="eval-actions">
+                      {run.participants.map((p, i) =>
+                        run.request.benchmarks.map((task) => (
+                          <a
+                            key={`${i}:${task}`}
+                            href={`/api/evaluations/runs/${run.id}/harness-results/${i}/${task}`}
+                          >
+                            Export {p.preset} · {task}
+                          </a>
+                        )),
+                      )}
+                    </div>
+                  )}
                   <pre className="eval-output">
                     {JSON.stringify(run.participants, null, 2)}
                   </pre>
@@ -1121,7 +1311,7 @@ export function EvaluationsPage({
                             <option value="failed">Failed</option>
                             <option value="error">Errors</option>
                             <option value="pending">Pending score</option>
-                            <option value="scored">Judge scored</option>
+                            <option value="scored">Scored</option>
                           </select>
                         </label>
                         <fieldset>
@@ -1184,6 +1374,11 @@ export function EvaluationsPage({
                               <pre className="eval-output">{m.content}</pre>
                             </div>
                           ))}
+                          {s.harness_metrics && (
+                            <pre className="eval-output">
+                              {JSON.stringify(s.harness_metrics, null, 2)}
+                            </pre>
+                          )}
                           {s.expected != null && <p>Expected: {s.expected}</p>}
                           {s.judge_output && (
                             <pre className="eval-output">{s.judge_output}</pre>

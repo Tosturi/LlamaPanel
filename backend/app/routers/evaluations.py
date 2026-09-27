@@ -3,6 +3,7 @@ import json
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from pydantic import ValidationError
 
 from app.evals.library import CATALOG, MAX_BYTES
@@ -16,8 +17,24 @@ def service(request):
 
 
 def idle(svc):
+    if svc.harness.status()["state"] == "installing":
+        raise HTTPException(409, "Wait for harness installation")
     if svc.active or (svc.download_task and not svc.download_task.done()):
         raise HTTPException(409, "Wait for the active evaluation or dataset download")
+
+
+@router.get("/harness")
+async def harness_status(request: Request) -> dict:
+    return service(request).harness.status()
+
+
+@router.post("/harness/install")
+async def harness_install(request: Request) -> dict:
+    svc = service(request)
+    async with svc.lock:
+        idle(svc)
+        await svc.harness.install()
+    return svc.harness.status()
 
 
 @router.get("/library")
@@ -133,16 +150,46 @@ async def samples(
 async def logs(id: str, request: Request) -> dict:
     svc = service(request)
     path = svc.log_path(id)
+    directory = svc._dir(id)
 
     # Read only the tail; model loading logs may be large.
     def read():
-        if not path.exists():
-            return ""
-        with path.open("rb") as f:
-            f.seek(max(0, path.stat().st_size - 32000))
-            return f.read().decode("utf-8", errors="replace")
+        paths = [
+            path,
+            *sorted(directory.glob("prepare/*/harness.log")),
+            *sorted(directory.glob("harness/*/*/harness.log")),
+        ]
+        parts = []
+        for item in paths:
+            if item.exists():
+                with item.open("rb") as f:
+                    f.seek(max(0, item.stat().st_size - 32000))
+                    parts.append(
+                        f"--- {item.name if item == path else item.relative_to(directory)} ---\n"
+                        + f.read().decode("utf-8", errors="replace")
+                    )
+        return "\n".join(parts)[-64000:]
 
     return {"text": await asyncio.to_thread(read)}
+
+
+@router.get("/runs/{id}/harness-results/{participant}/{task}")
+async def harness_results(id: str, participant: int, task: str, request: Request):
+    svc = service(request)
+    run = svc.get(id)
+    if (
+        run["request"].get("engine") != "lm-eval"
+        or participant < 0
+        or participant >= len(run["participants"])
+        or task not in run["request"]["benchmarks"]
+    ):
+        raise HTTPException(404, "Harness result not found")
+    path = svc._dir(id) / "harness" / str(participant) / task / "results.json"
+    if not path.exists():
+        raise HTTPException(404, "Task results are not available yet")
+    return FileResponse(
+        path, filename=f"{id}-{participant}-{task}.json", media_type="application/json"
+    )
 
 
 def require_active(svc, id):

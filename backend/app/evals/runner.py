@@ -16,6 +16,7 @@ import httpx
 from fastapi import HTTPException
 
 from app import __version__
+from app.evals.harness import HarnessRuntime, REVISION
 from app.evals.library import BenchmarkLibrary, document
 from app.evals.schemas import EvalRequest, EvalParticipant
 from app.flags import FlagCatalog, key_from_cli
@@ -76,6 +77,7 @@ class EvaluationService:
         self.app = app
         self.directory = app.state.settings.data_dir / "evaluations"
         self.library = BenchmarkLibrary(app.state.settings.data_dir)
+        self.harness = HarnessRuntime(app.state.settings.data_dir)
         self.task = None
         self.run = None
         self.instance_id = None
@@ -304,8 +306,20 @@ class EvaluationService:
                 raise HTTPException(409, "A comparison is already active")
             if self.download_task and not self.download_task.done():
                 raise HTTPException(409, "Wait for the dataset download to finish")
+            if req.engine == "lm-eval":
+                self.harness.require()
             suites = []
             for id in req.benchmarks:
+                if req.engine == "lm-eval":
+                    suites.append(
+                        {
+                            "id": id,
+                            "suite": {"name": id, "scorer": "harness", "samples": []},
+                            "source": "lm-evaluation-harness",
+                            "revision": REVISION,
+                        }
+                    )
+                    continue
                 data = await asyncio.to_thread(self.library.get, id)
                 suite = data["suite"]
                 samples = select_samples(suite["samples"], req.sample_limit, req.seed)
@@ -480,6 +494,8 @@ class EvaluationService:
         }:
             raise HTTPException(409, "Pause is available during evaluation")
         self.gate.clear()
+        if self.run["request"].get("engine") == "lm-eval":
+            (self._dir(self.run["id"]) / "pause").touch()
         await self.state("pausing")
 
     async def resume(self, request):
@@ -506,6 +522,7 @@ class EvaluationService:
         )
         self.run["error"] = None
         self.gate.set()
+        (self._dir(self.run["id"]) / "pause").unlink(missing_ok=True)
         await self.state("running")
 
     async def checkpoint(self, phase):
@@ -620,6 +637,8 @@ class EvaluationService:
         pending_judge = []
         final_state, final_error = "completed", None
         try:
+            if req.get("engine") == "lm-eval":
+                await self.prepare_harness()
             async with registry.lock:
                 for item in busy:
                     manager = registry.managers[item["id"]]
@@ -648,6 +667,10 @@ class EvaluationService:
                 for index, p in enumerate(self.run["participants"]):
                     self.adjustments = {}
                     url = await self.load_with_retry(p)
+                    if req.get("engine") == "lm-eval":
+                        await self.evaluate_harness(index, p, url)
+                        await registry.managers[self.instance_id].stop()
+                        continue
                     await self.calibrate(
                         client,
                         url,
@@ -768,6 +791,160 @@ class EvaluationService:
                     final_state, error=final_error, finished_at=time.time()
                 )
 
+    def harness_payload(self, task):
+        req = self.run["request"]
+        directory = self._dir(self.run["id"])
+        return {
+            "task": task,
+            "seed": req["seed"],
+            "limit": req["sample_limit"],
+            "num_fewshot": req["harness"]["num_fewshot"],
+            "chat_template": req["harness"]["apply_chat_template"],
+            "max_length": req["harness"]["max_length"],
+            "timeout": req["request_timeout"],
+            "manifest": str(directory / f"task-{task}.json"),
+            "control": str(directory / "pause"),
+        }
+
+    async def prepare_harness(self):
+        self.run["harness_revision"] = REVISION
+        packages = self.harness.root / "packages.txt"
+        if packages.exists():
+            await asyncio.to_thread(
+                shutil.copyfile,
+                packages,
+                self._dir(self.run["id"]) / "harness-packages.txt",
+            )
+        for task in self.run["request"]["benchmarks"]:
+            await self.state("preparing", current=f"Preparing {task}", phase="harness")
+
+            async def event(data):
+                if "prepared" in data:
+                    self.run["total"] += data["prepared"] * len(
+                        self.run["participants"]
+                    )
+
+            error = await self.harness.worker(
+                {**self.harness_payload(task), "prepare": True},
+                self._dir(self.run["id"]) / "prepare" / task,
+                event,
+            )
+            if error:
+                raise ValueError(error["message"])
+        await self.persist()
+
+    async def evaluate_harness(self, index, participant, url):
+        for task in self.run["request"]["benchmarks"]:
+            await self.checkpoint("running")
+            directory = self._dir(self.run["id"]) / "harness" / str(index) / task
+            while True:
+                await self.state(
+                    "running",
+                    phase="harness",
+                    current=f"{participant['preset']} · {task}",
+                    requests_completed=0,
+                    requests_total=0,
+                )
+
+                async def event(data):
+                    if data.get("paused"):
+                        await self.state("paused")
+                    elif "requests_completed" in data:
+                        self.run.update(
+                            requests_completed=data["requests_completed"],
+                            requests_total=data["requests_total"],
+                        )
+                        await self.persist()
+
+                error = await self.harness.worker(
+                    {
+                        **self.harness_payload(task),
+                        "participant": participant,
+                        "url": url,
+                    },
+                    directory,
+                    event,
+                )
+                if not error:
+                    break
+                if not error.get("resource"):
+                    raise ValueError(error["message"])
+                await self.app.state.instances.managers[self.instance_id].stop()
+                await self.pause_for_error(error["message"])
+                url = await self.load_with_retry(participant)
+            result = await asyncio.to_thread(
+                lambda: json.loads(
+                    (directory / "results.json").read_text(encoding="utf-8")
+                )
+            )
+            samples = result.get("samples", {}).get(task, [])
+            metrics = result["results"][task]
+            values = [
+                (k, v)
+                for k, v in metrics.items()
+                if "," in k and "_stderr," not in k and isinstance(v, (int, float))
+            ]
+            if not values:
+                raise ValueError(f"Harness returned no numeric metrics for {task}")
+            primary, _ = values[0]
+            primary_metric, primary_filter = primary.split(",", 1)
+            binary = primary_metric in {
+                "acc",
+                "acc_norm",
+                "exact_match",
+                "prompt_level_strict_acc",
+                "prompt_level_loose_acc",
+            }
+            count = len({s["doc_id"] for s in samples})
+            for n, (metric, score) in enumerate(values):
+                key = task if n == 0 else f"{task}/{metric}"
+                self.run["metrics"][f"{index}:{key}"] = {
+                    "participant": index,
+                    "benchmark": key,
+                    "name": task,
+                    "metric": "accuracy" if n == 0 and binary else metric,
+                    "harness_metric": metric,
+                    "total": count,
+                    "scored": count,
+                    "errors": 0,
+                    "score": score,
+                    "stderr": metrics.get(metric.replace(",", "_stderr,", 1)),
+                    "higher_is_better": result.get("higher_is_better", {})
+                    .get(task, {})
+                    .get(metric.split(",")[0]),
+                }
+            for sample in samples:
+                if sample["filter"] != primary_filter:
+                    continue
+                value = sample.get(primary_metric)
+                await self.append(
+                    {
+                        "participant": index,
+                        "benchmark": task,
+                        "sample_id": str(sample["doc_id"]),
+                        "phase": "harness",
+                        "score": value if isinstance(value, (int, float)) else None,
+                        "expected": str(sample["target"]),
+                        "harness_metrics": {k: sample[k] for k in sample["metrics"]},
+                        "messages": [
+                            {
+                                "role": "prompt / choices",
+                                "content": json.dumps(
+                                    sample["arguments"], ensure_ascii=False
+                                ),
+                            },
+                            {
+                                "role": "model responses",
+                                "content": json.dumps(
+                                    sample["resps"], ensure_ascii=False
+                                ),
+                            },
+                        ],
+                    }
+                )
+            self.run["completed"] += count
+            await self.persist()
+
     async def judge(self, client, rows):
         p = self.run["judge"]
         self.adjustments = {}
@@ -860,6 +1037,7 @@ class EvaluationService:
 
     async def close(self):
         await self.cancel()
+        await self.harness.close()
         if self.download_task and not self.download_task.done():
             self.download_task.cancel()
             await self.download_task

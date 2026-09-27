@@ -359,3 +359,6 @@ dialog.path-browser::backdrop { background: #0009; }
 .eval-page .eval-answer-filters fieldset label { display: flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; line-height: 20px; }
 .eval-page .eval-answer-filters input[type=checkbox] { width: auto; }
 .eval-page .eval-live-logs { max-height: 480px; overflow: auto; }
+
+.eval-page .eval-harness-settings { margin-top: 24px; }
+.eval-page .eval-harness-settings .eval-fields { margin: 24px 0; }

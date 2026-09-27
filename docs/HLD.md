@@ -112,3 +112,10 @@ local judging happens after participants unload. Immutable input/configuration
 snapshots and incremental sample records preserve comparisons without retaining
 all conversations in memory. See [evaluations](evaluations.md) for supported
 recipes, resource recovery, storage and limitations.
+
+The optional harness engine runs in a supervised subprocess with a separate
+Python environment and a pinned upstream GGUF backend. The panel owns model
+lifecycle, resource controls and worker cancellation; harness owns task prompts
+and metrics. Workers enforce slot/context limits, compare dataset fingerprints
+across participants and persist a per-task response cache for resource retries.
+Full harness reports are retained alongside the panel's normalized results.

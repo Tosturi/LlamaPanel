@@ -1,0 +1,2 @@
+# Keep in sync with app/evals/harness.py. No local model weights or CUDA dependencies.
+lm_eval[api,ifeval] @ https://github.com/EleutherAI/lm-evaluation-harness/archive/d6de81643928d653435c431bae19945d41d32520.zip
