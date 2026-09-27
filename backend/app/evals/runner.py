@@ -133,10 +133,17 @@ class EvaluationService:
                     "error",
                 )
             }
-            for r in sorted(rows, key=lambda r: r["created_at"], reverse=True)
+            for r in sorted(
+                (r for r in rows if r.get("id")),
+                key=lambda r: r["created_at"],
+                reverse=True,
+            )
         ]
 
     def results(self, id, offset=0, limit=100, participants=None, status="all"):
+        return list(self.iter_results(id, offset, limit, participants, status))
+
+    def iter_results(self, id, offset=0, limit=None, participants=None, status="all"):
         run = self.get(id)
         # Keep offsets, not conversations, in memory. Judge records replace
         # generation records while preserving the original sample order.
@@ -169,7 +176,7 @@ class EvaluationService:
                 else:
                     outcome = "passed" if row["score"] == 1 else "failed"
                 positions[key] = (position, outcome)
-            selected = []
+            emitted = 0
             matched = 0
             for key, (position, outcome) in positions.items():
                 if participants and key[0] not in participants:
@@ -180,10 +187,10 @@ class EvaluationService:
                 if matched <= offset:
                     continue
                 f.seek(position)
-                selected.append({**json.loads(f.readline()), "status": outcome})
-                if len(selected) == limit:
+                yield {**json.loads(f.readline()), "status": outcome}
+                emitted += 1
+                if limit is not None and emitted >= limit:
                     break
-        return selected
 
     def log_path(self, id):
         value = self.get(id)

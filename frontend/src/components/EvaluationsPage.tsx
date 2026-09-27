@@ -1010,16 +1010,53 @@ export function EvaluationsPage({
                       {h.state}
                     </small>
                   </div>
-                  <button
-                    disabled={pending}
-                    onClick={() =>
-                      void act(async () =>
-                        setSelectedRun(await evalApi<Run>(`/runs/${h.id}`)),
-                      )
-                    }
-                  >
-                    Open
-                  </button>
+                  <div className="eval-actions">
+                    <button
+                      disabled={pending}
+                      onClick={() =>
+                        void act(async () =>
+                          setSelectedRun(await evalApi<Run>(`/runs/${h.id}`)),
+                        )
+                      }
+                    >
+                      Open
+                    </button>
+                    {!activeStates.has(h.state) && (
+                      <>
+                        <a
+                          className="eval-report-link"
+                          href={`/api/evaluations/runs/${h.id}/report`}
+                        >
+                          Export HTML
+                        </a>
+                        <button
+                          disabled={pending}
+                          onClick={() => {
+                            if (
+                              !window.confirm(
+                                `Delete “${h.name}” and its saved results, logs and configuration?`,
+                              )
+                            )
+                              return;
+                            void act(async () => {
+                              await evalApi(`/runs/${h.id}`, "DELETE");
+                              if (runId.current === h.id) {
+                                runId.current = null;
+                                setRun(null);
+                                setSamples([]);
+                                setShowSamples(false);
+                                setShowLogs(false);
+                                setLogs(null);
+                              }
+                              await refreshHistory();
+                            });
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))}
             </section>

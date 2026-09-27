@@ -208,3 +208,16 @@ for multiple-choice tasks. Scores and answer inspection become available when a
 task finishes scoring. Logs include both llama-server and harness output. Pause
 drains the current request batch; cancel terminates the worker and stops its
 server. Panel restart marks unfinished runs interrupted, without automatic resume.
+
+## Exporting and deleting comparisons
+
+In **Results → Comparisons**, completed, failed, cancelled and interrupted runs
+have **Export HTML** and **Delete** actions. HTML reports are standalone files
+that open offline and contain the metric table, configuration/provenance and all
+recorded answers, including judge output and harness sample metrics. Answer
+sections can be expanded individually. The report uses the latest record for
+each sample and is not restricted by the viewer's current page or filters.
+
+Delete asks for confirmation and removes that run's results, inputs, logs,
+response caches and configuration. Installed datasets, presets and other runs
+remain available. Active or paused runs must finish or be cancelled first.
