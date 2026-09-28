@@ -1,9 +1,15 @@
 import asyncio
 import json
+import os
+import shutil
+import tempfile
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
+from app.evals.report import write_report
 from pydantic import ValidationError
 
 from app.evals.library import CATALOG, MAX_BYTES
@@ -130,6 +136,63 @@ async def run(id: str, request: Request) -> dict:
                 s["id"] for s in benchmark["suite"].pop("samples")
             ]
     return value
+
+
+def require_finished(svc, id):
+    value = svc.get(id)
+    if (svc.active and svc.run["id"] == id) or value["state"] not in {
+        "completed",
+        "failed",
+        "cancelled",
+        "interrupted",
+    }:
+        raise HTTPException(
+            409, "Wait for this comparison to finish or cancel it first"
+        )
+    return value
+
+
+@router.delete("/runs/{id}")
+async def delete_run(id: str, request: Request) -> dict:
+    svc = service(request)
+    async with svc.lock:
+        require_finished(svc, id)
+        await asyncio.to_thread(shutil.rmtree, svc._dir(id))
+        if svc.run and svc.run["id"] == id:
+            svc.run = None
+    return {"deleted": id}
+
+
+@router.get("/runs/{id}/report")
+async def report(id: str, request: Request):
+    svc = service(request)
+    async with svc.lock:
+        value = require_finished(svc, id)
+        fd, filename = tempfile.mkstemp(prefix="llamapanel-report-", suffix=".html")
+        os.close(fd)
+        path = Path(filename)
+        try:
+            # Complete the file before serving, so deletion cannot invalidate
+            # an in-flight download. Stream answers from the run's JSONL index.
+            writer = asyncio.create_task(
+                asyncio.to_thread(write_report, path, value, svc.iter_results(id))
+            )
+            try:
+                await asyncio.shield(writer)
+            except asyncio.CancelledError:
+                # The thread cannot be cancelled; wait before releasing the
+                # run lock or removing its temporary output on Windows.
+                await writer
+                raise
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+    return FileResponse(
+        path,
+        media_type="text/html",
+        filename=f"comparison-{id}.html",
+        background=BackgroundTask(path.unlink, missing_ok=True),
+    )
 
 
 @router.get("/runs/{id}/samples")
